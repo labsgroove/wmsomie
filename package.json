@@ -10,13 +10,22 @@
     "dev:all": "node start-dev.js",
     "start:all": "node start-prod.js",
     "install:all": "npm install && cd ui && npm install",
-    "stop": "node stop.js"
+    "stop": "node stop.js",
+    "seed": "node scripts/seed.js",
+    "seed:more": "node scripts/generate-more-data.js",
+    "cleanup": "node scripts/cleanup-database.js"
   },
-  "keywords": ["wms", "logistica", "estoque", "omie"],
+  "keywords": [
+    "wms",
+    "logistica",
+    "estoque",
+    "omie"
+  ],
   "author": "your-name",
   "license": "MIT",
   "dependencies": {
     "axios": "^1.6.0",
+    "cors": "^2.8.6",
     "dotenv": "^16.4.0",
     "express": "^4.19.2",
     "mongoose": "^8.3.0",
