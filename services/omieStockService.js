@@ -63,6 +63,13 @@ export async function getStockFromOmie(productOmieId) {
 export async function syncAllStockFromOmie() {
   logger.info('Starting full stock sync from Omie');
   
+  // Importar produtos para garantir que temos os dados mais recentes
+  const Product = (await import('../models/Product.js')).default;
+  const { syncProducts } = await import('./omieProductService.js');
+  
+  logger.info('Syncing products first to get latest data...');
+  await syncProducts();
+  
   const products = await Product.find({ omieId: { $exists: true, $ne: null } });
   const locations = await Location.find();
   const defaultLocation = locations[0];
@@ -78,17 +85,49 @@ export async function syncAllStockFromOmie() {
 
   for (const product of products) {
     try {
-      const omieStock = await getStockFromOmie(product.omieId);
+      // Tenta consultar estoque via API específica primeiro
+      let stockQuantity = null;
       
-      if (omieStock && omieStock.estoque_atual !== undefined) {
+      try {
+        const omieStock = await getStockFromOmie(product.omieId);
+        if (omieStock && omieStock.estoque_atual !== undefined) {
+          stockQuantity = omieStock.estoque_atual;
+        }
+      } catch (apiError) {
+        logger.warn(`Failed to get stock from API for ${product.sku}, trying product data...`);
+        
+        // Se falhar, busca o produto novamente para pegar o quantidade_estoque
+        try {
+          const { getProductFromOmie } = await import('./omieProductService.js');
+          const productData = await getProductFromOmie(product.omieId);
+          if (productData && productData.quantidade_estoque !== undefined) {
+            stockQuantity = productData.quantidade_estoque;
+            logger.info(`Using stock quantity from product data for ${product.sku}: ${stockQuantity}`);
+          }
+        } catch (productError) {
+          logger.warn(`Failed to get product data for ${product.sku}, using current local stock...`);
+          // Se tudo falhar, mantém o estoque local atual
+          const localStock = await Stock.findOne({ product: product._id, location: defaultLocation._id });
+          if (localStock) {
+            stockQuantity = localStock.quantity;
+          } else {
+            stockQuantity = 0;
+          }
+        }
+      }
+      
+      if (stockQuantity !== null) {
         await Stock.findOneAndUpdate(
           { product: product._id, location: defaultLocation._id },
-          { quantity: omieStock.estoque_atual },
+          { quantity: stockQuantity },
           { upsert: true, new: true }
         );
         syncedCount++;
-        logger.logStockSync(product, 'synced_from_omie', omieStock.estoque_atual);
+        logger.logStockSync(product, 'synced_from_omie', stockQuantity);
+      } else {
+        logger.warn(`No stock quantity found for product ${product.sku}`);
       }
+      
     } catch (error) {
       errors.push({ product: product.sku, error: error.message });
       logger.logStockSync(product, 'sync_from_omie_failed', 0, error);
