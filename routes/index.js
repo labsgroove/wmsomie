@@ -102,12 +102,44 @@ router.patch('/orders/:id', async (req, res) => {
 
 router.get('/stock', async (req, res) => {
   try {
-    const stock = await Stock.find()
-      .populate('product')
-      .populate('location')
+    // Buscar estoque com o novo modelo
+    const stockRecords = await Stock.find()
       .sort({ createdAt: -1 });
-    res.json(stock);
+    
+    // Para cada registro de estoque, buscar produto e localização
+    const stock = await Promise.all(
+      stockRecords.map(async (record) => {
+        const product = await Product.findOne({ codigo: record.sku });
+        const location = await Location.findOne({ code: record.locationCode });
+        
+        return {
+          _id: record._id,
+          quantity: record.quantity,
+          reservedQuantity: record.reservedQuantity,
+          availableQuantity: record.availableQuantity,
+          product: product ? {
+            _id: product._id,
+            name: product.descricao,
+            sku: product.codigo,
+            omieId: product.omieId
+          } : null,
+          location: location ? {
+            _id: location._id,
+            code: location.code,
+            description: location.description
+          } : null,
+          lastUpdated: record.lastUpdated,
+          qualityStatus: record.qualityStatus
+        };
+      })
+    );
+    
+    // Filtrar apenas registros com produto válido
+    const validStock = stock.filter(item => item.product !== null);
+    
+    res.json(validStock);
   } catch (error) {
+    console.error('Error loading stock:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -116,8 +148,14 @@ router.patch('/stock/:productId/location', async (req, res) => {
   try {
     const { locationId } = req.body;
     
+    // Encontrar produto pelo ID
+    const product = await Product.findById(req.params.productId);
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+    
     // Encontrar ou criar localização
-    let location = await Location.findById(locationId);
+    let location = await Location.findOne({ code: locationId });
     if (!location) {
       location = await Location.create({
         code: locationId,
@@ -125,15 +163,42 @@ router.patch('/stock/:productId/location', async (req, res) => {
       });
     }
 
-    // Atualizar estoque
+    // Atualizar estoque com o novo modelo
     const stock = await Stock.findOneAndUpdate(
-      { product: req.params.productId },
-      { location: location._id },
+      { sku: product.codigo, locationCode: locationId },
+      { 
+        lastUpdated: new Date()
+      },
       { new: true, upsert: true }
-    ).populate('product').populate('location');
+    );
+    
+    // Atualizar localização para incluir o SKU
+    await location.updateSku(product.codigo, stock.quantity, stock.reservedQuantity);
+    
+    // Retornar formato compatível com a UI
+    const response = {
+      _id: stock._id,
+      quantity: stock.quantity,
+      reservedQuantity: stock.reservedQuantity,
+      availableQuantity: stock.availableQuantity,
+      product: {
+        _id: product._id,
+        name: product.descricao,
+        sku: product.codigo,
+        omieId: product.omieId
+      },
+      location: {
+        _id: location._id,
+        code: location.code,
+        description: location.description
+      },
+      lastUpdated: stock.lastUpdated,
+      qualityStatus: stock.qualityStatus
+    };
 
-    res.json(stock);
+    res.json(response);
   } catch (error) {
+    console.error('Error updating stock location:', error);
     res.status(500).json({ error: error.message });
   }
 });

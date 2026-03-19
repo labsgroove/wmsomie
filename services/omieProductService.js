@@ -51,15 +51,7 @@ export async function syncProducts() {
     // Sincronizar produtos
     for (const p of allProducts) {
       try {
-        await Product.findOneAndUpdate(
-          { omieId: p.codigo_produto },
-          {
-            name: p.descricao,
-            sku: p.codigo || p.codigo_produto,
-            omieId: p.codigo_produto,
-          },
-          { upsert: true, new: true }
-        );
+        await Product.createFromOmie(p);
         
         syncedCount++;
         logger.debug(`Product synced: ${p.codigo} - ${p.descricao}`);

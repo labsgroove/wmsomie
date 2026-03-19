@@ -8,31 +8,43 @@ import logger from '../utils/syncLogger.js';
 export async function sendStockToOmie() {
   logger.info('Starting stock sync to Omie');
   
-  const stocks = await Stock.find().populate('product');
+  // Buscar produtos com estoque local
+  const stockAggregates = await Stock.aggregate([
+    { $match: { quantity: { $gt: 0 }, qualityStatus: 'GOOD' } },
+    { 
+      $group: {
+        _id: '$sku',
+        totalQuantity: { $sum: '$quantity' }
+      }
+    }
+  ]);
+  
   let successCount = 0;
   let errorCount = 0;
 
-  for (const s of stocks) {
-    if (!s.product.omieId) {
-      logger.warn(`Product ${s.product.sku} has no Omie ID, skipping`);
-      continue;
-    }
-
+  for (const stock of stockAggregates) {
     try {
+      // Buscar produto para obter omieId
+      const product = await Product.findOne({ codigo: stock._id });
+      if (!product || !product.omieId) {
+        logger.warn(`Product ${stock._id} has no Omie ID, skipping`);
+        continue;
+      }
+
       await callOmie(
         'estoque/ajuste/',
         'AjustarEstoque',
         {
-          codigo_produto: s.product.omieId,
-          quantidade: s.quantity,
+          codigo_produto: product.omieId,
+          quantidade: stock.totalQuantity,
         }
       );
       
       successCount++;
-      logger.logStockSync(s.product, 'sent_to_omie', s.quantity);
+      logger.logStockSync(product, 'sent_to_omie', stock.totalQuantity);
     } catch (error) {
       errorCount++;
-      logger.logStockSync(s.product, 'send_to_omie_failed', s.quantity, error);
+      logger.error(`Failed to sync stock for ${stock._id}`, { error: error.message });
     }
   }
 
@@ -44,19 +56,54 @@ export async function getStockFromOmie(productOmieId) {
   logger.debug(`Fetching stock from Omie for product ${productOmieId}`);
   
   try {
+    // Primeiro tenta buscar pelo ID do produto
     const result = await callOmie(
       'estoque/consulta/',
-      'ConsultarEstoque',
+      'PosicaoEstoque',
       {
-        codigo_produto: productOmieId,
+        id_prod: parseInt(productOmieId),
+        codigo_local_estoque: 0, // Todos os locais
+        data: new Date().toLocaleDateString('pt-BR')
       }
     );
 
-    logger.logApiCall('ConsultarEstoque', 'estoque/consulta/', { productOmieId }, result);
+    logger.logApiCall('PosicaoEstoque', 'estoque/consulta/', { productOmieId }, result);
     return result;
   } catch (error) {
-    logger.logApiCall('ConsultarEstoque', 'estoque/consulta/', { productOmieId }, null, error);
-    throw error;
+    logger.logApiCall('PosicaoEstoque', 'estoque/consulta/', { productOmieId }, null, error);
+    
+    // Se falhar, tenta listar posição de estoque geral
+    try {
+      const listResult = await callOmie(
+        'estoque/consulta/',
+        'ListarPosEstoque',
+        {
+          nPagina: 1,
+          nRegPorPagina: 50,
+          dDataPosicao: new Date().toLocaleDateString('pt-BR'),
+          cExibeTodos: "N",
+          codigo_local_estoque: 0
+        }
+      );
+      
+      // Filtrar pelo produto específico
+      if (listResult.produtos && listResult.produtosArray) {
+        const productStock = listResult.produtosArray.find(
+          p => p.id_prod == productOmieId || p.cod_int === productOmieId
+        );
+        
+        if (productStock) {
+          logger.logApiCall('ListarPosEstoque', 'estoque/consulta/', { productOmieId }, productStock);
+          return productStock;
+        }
+      }
+      
+      logger.logApiCall('ListarPosEstoque', 'estoque/consulta/', { productOmieId }, listResult);
+      return listResult;
+    } catch (listError) {
+      logger.logApiCall('ListarPosEstoque', 'estoque/consulta/', { productOmieId }, null, listError);
+      throw listError;
+    }
   }
 }
 
@@ -64,13 +111,12 @@ export async function syncAllStockFromOmie() {
   logger.info('Starting full stock sync from Omie');
   
   // Importar produtos para garantir que temos os dados mais recentes
-  const Product = (await import('../models/Product.js')).default;
   const { syncProducts } = await import('./omieProductService.js');
   
   logger.info('Syncing products first to get latest data...');
   await syncProducts();
   
-  const products = await Product.find({ omieId: { $exists: true, $ne: null } });
+  const products = await Product.find({ omieId: { $exists: true, $ne: null }, isActive: true });
   let locations = await Location.find({ isActive: true });
   
   // Se não houver localizações, criar algumas padrão
@@ -103,57 +149,57 @@ export async function syncAllStockFromOmie() {
       
       try {
         const omieStock = await getStockFromOmie(product.omieId);
-        if (omieStock && omieStock.estoque_atual !== undefined) {
-          stockQuantity = omieStock.estoque_atual;
+        
+        // Extrair quantidade do campo correto 'saldo'
+        if (omieStock && omieStock.saldo !== undefined) {
+          stockQuantity = omieStock.saldo;
+        } else if (omieStock && omieStock.fisico !== undefined) {
+          stockQuantity = omieStock.fisico;
         }
       } catch (apiError) {
-        logger.warn(`Failed to get stock from API for ${product.sku}, trying product data...`);
+        logger.warn(`Failed to get stock from API for ${product.codigo}, trying product data...`);
         
-        // Se falhar, busca o produto novamente para pegar o quantidade_estoque
-        try {
-          const { getProductFromOmie } = await import('./omieProductService.js');
-          const productData = await getProductFromOmie(product.omieId);
-          if (productData && productData.quantidade_estoque !== undefined) {
-            stockQuantity = productData.quantidade_estoque;
-            logger.info(`Using stock quantity from product data for ${product.sku}: ${stockQuantity}`);
-          }
-        } catch (productError) {
-          logger.warn(`Failed to get product data for ${product.sku}, using current local stock...`);
-          // Se tudo falhar, mantém o estoque local atual
-          const localStock = await Stock.findOne({ product: product._id, location: defaultLocation._id });
-          if (localStock) {
-            stockQuantity = localStock.quantity;
-          } else {
-            stockQuantity = 0;
-          }
+        // Se falhar, usa o quantidade_estoque do produto
+        if (product.quantidade_estoque !== undefined) {
+          stockQuantity = product.quantidade_estoque;
+          logger.info(`Using stock quantity from product data for ${product.codigo}: ${stockQuantity}`);
         }
       }
       
-      if (stockQuantity !== null) {
-        // Verificar se já existe estoque local e se deve ser mantido
-        const localStock = await Stock.findOne({ product: product._id, location: defaultLocation._id });
+      if (stockQuantity !== null && stockQuantity > 0) {
+        // Verificar estoque local atual
+        const currentStock = await Stock.find({ sku: product.codigo });
+        const localTotal = currentStock.reduce((sum, s) => sum + s.quantity, 0);
         
-        if (localStock && localStock.quantity > 0) {
+        if (localTotal > 0) {
           // Manter o estoque local se for maior que zero
-          logger.info(`Keeping local stock for ${product.sku}: ${localStock.quantity} (Omie has: ${stockQuantity})`);
+          logger.info(`Keeping local stock for ${product.codigo}: ${localTotal} (Omie has: ${stockQuantity})`);
           syncedCount++;
-          logger.logStockSync(product, 'kept_local_stock', localStock.quantity);
+          logger.logStockSync(product, 'kept_local_stock', localTotal);
         } else {
-          // Atualizar apenas se o estoque local for zero ou não existir
+          // Criar/atualizar estoque na localização padrão
           await Stock.findOneAndUpdate(
-            { product: product._id, location: defaultLocation._id },
-            { quantity: stockQuantity },
+            { sku: product.codigo, locationCode: defaultLocation.code },
+            { 
+              quantity: stockQuantity,
+              lastUpdated: new Date(),
+              omieSyncedAt: new Date()
+            },
             { upsert: true, new: true }
           );
+          
+          // Atualizar a localização também
+          await defaultLocation.updateSku(product.codigo, stockQuantity, 0);
+          
           syncedCount++;
           logger.logStockSync(product, 'synced_from_omie', stockQuantity);
         }
       } else {
-        logger.warn(`No stock quantity found for product ${product.sku}`);
+        logger.warn(`No stock quantity found for product ${product.codigo}`);
       }
       
     } catch (error) {
-      errors.push({ product: product.sku, error: error.message });
+      errors.push({ product: product.codigo, error: error.message });
       logger.logStockSync(product, 'sync_from_omie_failed', 0, error);
     }
   }
@@ -166,20 +212,25 @@ export async function getStockMovementsFromOmie(productOmieId, startDate, endDat
   logger.debug(`Fetching stock movements from Omie for product ${productOmieId}`);
   
   try {
+    // Usar o método correto para listar movimentos
     const result = await callOmie(
-      'estoque/movestoque/',
-      'ConsultarMovimentoEstoque',
+      'estoque/consulta/',
+      'ListarMovimentoEstoque',
       {
-        codigo_produto: productOmieId,
-        data_inicial: startDate,
-        data_final: endDate,
+        nPagina: 1,
+        nRegPorPagina: 50,
+        codigo_local_estoque: 0, // Todos os locais
+        idProd: parseInt(productOmieId),
+        dDtInicial: startDate,
+        dDtFinal: endDate,
+        lista_local_estoque: ""
       }
     );
 
-    logger.logApiCall('ConsultarMovimentoEstoque', 'estoque/movestoque/', { productOmieId, startDate, endDate }, result);
+    logger.logApiCall('ListarMovimentoEstoque', 'estoque/consulta/', { productOmieId, startDate, endDate }, result);
     return result;
   } catch (error) {
-    logger.logApiCall('ConsultarMovimentoEstoque', 'estoque/movestoque/', { productOmieId, startDate, endDate }, null, error);
+    logger.logApiCall('ListarMovimentoEstoque', 'estoque/consulta/', { productOmieId, startDate, endDate }, null, error);
     throw error;
   }
 }
