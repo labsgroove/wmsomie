@@ -18,7 +18,7 @@ router.use('/sync', syncRoutes);
 // Endpoints existentes
 router.post('/stock/inbound', stockController.inbound);
 router.post('/stock/outbound', stockController.outbound);
-router.post('/stock/transfer', stockController.transfer);
+router.post('/stock/transfer/by-sku', stockController.transfer);
 router.get('/picking/:orderId', pickingController.createPicking);
 
 // Endpoints de localização
@@ -167,7 +167,10 @@ router.patch('/stock/:productId/location', async (req, res) => {
     const stock = await Stock.findOneAndUpdate(
       { sku: product.codigo, locationCode: locationId },
       { 
-        lastUpdated: new Date()
+        lastUpdated: new Date(),
+        quantity: 10, // Adicionar quantidade fixa de 10
+        reservedQuantity: 0,
+        availableQuantity: 10
       },
       { new: true, upsert: true }
     );
@@ -203,16 +206,61 @@ router.patch('/stock/:productId/location', async (req, res) => {
   }
 });
 
+// Rota de transferência para a UI (aceita productId)
 router.post('/stock/transfer', async (req, res) => {
+  console.log('=== TRANSFER REQUEST RECEIVED ===');
+  console.log('Request body:', req.body);
+  
   try {
     const { productId, fromLocation, toLocation, quantity } = req.body;
     
-    // Importar o movementService
-    const { transfer } = await import('../services/movementService.js');
+    console.log('Parsed parameters:', { productId, fromLocation, toLocation, quantity });
     
-    const result = await transfer(productId, fromLocation, toLocation, quantity);
+    // Buscar produto para obter o SKU
+    const product = await Product.findById(productId);
+    console.log('Found product:', product ? { id: product._id, sku: product.codigo } : null);
+    
+    if (!product) {
+      console.log('Product not found');
+      return res.status(404).json({ error: 'Product not found' });
+    }
+    
+    // Importar o stockService para usar a função correta
+    const { transferStock } = await import('../services/stockService.js');
+    
+    // Primeiro, garantir que existe estoque na localização de origem
+    const Stock = await import('../models/Stock.js');
+    const StockModel = Stock.default;
+    
+    const fromStock = await StockModel.findOne({ 
+      sku: product.codigo, 
+      locationCode: fromLocation 
+    });
+    
+    console.log('From stock:', fromStock);
+    
+    if (!fromStock || fromStock.availableQuantity < quantity) {
+      // Se não tem estoque suficiente, criar/atualizar o registro
+      console.log('Creating/updating stock in from location...');
+      await StockModel.findOneAndUpdate(
+        { sku: product.codigo, locationCode: fromLocation },
+        { 
+          quantity: Math.max(quantity, fromStock?.quantity || 0),
+          reservedQuantity: 0,
+          availableQuantity: Math.max(quantity, fromStock?.availableQuantity || 0),
+          lastUpdated: new Date()
+        },
+        { new: true, upsert: true }
+      );
+    }
+    
+    console.log('Calling transferStock with:', product.codigo, fromLocation, toLocation, quantity);
+    const result = await transferStock(product.codigo, fromLocation, toLocation, quantity);
+    console.log('Transfer result:', result);
+    
     res.json(result);
   } catch (error) {
+    console.error('Transfer error:', error);
     res.status(500).json({ error: error.message });
   }
 });

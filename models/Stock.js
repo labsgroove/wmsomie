@@ -132,19 +132,31 @@ StockSchema.methods.moveToLocation = function(newLocationCode, quantity) {
     throw new Error('Insufficient available quantity for transfer');
   }
   
-  return this.constructor.create({
-    sku: this.sku,
-    locationCode: newLocationCode,
-    quantity: quantity,
-    source: 'TRANSFER',
-    sourceDocument: this._id.toString(),
-    qualityStatus: this.qualityStatus,
-    batchNumber: this.batchNumber,
-    expiryDate: this.expiryDate
-  }).then(newStock => {
+  return this.constructor.findOneAndUpdate(
+    { 
+      sku: this.sku, 
+      locationCode: newLocationCode,
+      batchNumber: this.batchNumber || null
+    },
+    { 
+      $inc: { quantity: quantity },
+      lastUpdated: new Date(),
+      source: 'TRANSFER',
+      sourceDocument: this._id.toString(),
+      qualityStatus: this.qualityStatus
+    },
+    { upsert: true, new: true }
+  ).then(async (newStock) => {
     // Reduzir quantidade original
     this.quantity -= quantity;
-    return this.save().then(() => newStock);
+    await this.save();
+    
+    // Se a quantidade ficou 0, remover o registro
+    if (this.quantity === 0) {
+      await this.constructor.deleteOne({ _id: this._id });
+    }
+    
+    return newStock;
   });
 };
 

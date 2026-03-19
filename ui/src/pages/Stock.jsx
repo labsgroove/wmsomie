@@ -45,17 +45,31 @@ export default function Stock() {
   };
 
   const handleLocationUpdate = async (productId) => {
+    // Verificar se o campo de localização está preenchido
+    if (!newLocation || newLocation.trim() === '') {
+      console.error('Location field is empty');
+      alert('Por favor, digite uma localização antes de salvar.');
+      return;
+    }
+
     try {
-      console.log('Atualizando localização do produto...');
-      const response = await stockApi.updateLocation(productId, newLocation);
+      console.log('Atualizando localização do produto...', { productId, newLocation });
+      const response = await stockApi.updateLocation(productId, newLocation.trim());
       console.log('Resposta da API de atualização de localização:', response.status);
       console.log('Dados brutos da atualização de localização:', response.data);
+      
+      // Mostrar feedback de sucesso
+      alert('Localização atualizada com sucesso!');
+      
       await loadStock();
       setEditing(null);
       setNewLocation('');
     } catch (error) {
       console.error('Error updating location:', error);
       console.error('Detalhes do erro:', error.response?.data || error.message);
+      
+      // Mostrar feedback de erro
+      alert(`Erro ao atualizar localização: ${error.response?.data?.error || error.message}`);
     }
   };
 
@@ -73,14 +87,34 @@ export default function Stock() {
   };
 
   const handleInternalMove = async (productId) => {
+    // Verificar se todos os campos estão preenchidos
+    if (!moveData.fromLocation || !moveData.toLocation || !moveData.quantity) {
+      alert('Por favor, preencha todos os campos para mover o produto.');
+      return;
+    }
+
+    if (moveData.fromLocation === moveData.toLocation) {
+      alert('A localização de origem e destino devem ser diferentes.');
+      return;
+    }
+
     try {
+      console.log('Movendo produto...', { productId, moveData });
       const response = await stockApi.transfer(productId, moveData.fromLocation, moveData.toLocation, moveData.quantity);
       console.log('Movimentação interna:', response.data);
+      
+      // Mostrar feedback de sucesso
+      alert('Produto movido com sucesso!');
+      
       await loadStock();
       setMoving(null);
       setMoveData({ fromLocation: '', toLocation: '', quantity: 1 });
     } catch (error) {
       console.error('Error in internal move:', error);
+      console.error('Detalhes do erro:', error.response?.data || error.message);
+      
+      // Mostrar feedback de erro
+      alert(`Erro ao mover produto: ${error.response?.data?.error || error.message}`);
     }
   };
 

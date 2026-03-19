@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Stock API</title>
+    <meta charset="UTF-8">
+</head>
+<body>
+    <h1>Test Stock Location Update</h1>
+    <div id="results"></div>
+    
+    <script>
+        async function testLocationUpdate() {
+            const results = document.getElementById('results');
+            
+            try {
+                // First get stock to find a product
+                console.log('Getting stock...');
+                const stockResponse = await fetch('http://localhost:3000/api/stock');
+                const stock = await stockResponse.json();
+                
+                if (stock.length === 0) {
+                    results.innerHTML = '<p>No stock found. Please sync with Omie first.</p>';
+                    return;
+                }
+                
+                const firstProduct = stock[0];
+                console.log('First product:', firstProduct);
+                
+                // Test location update
+                console.log('Testing location update...');
+                const updateResponse = await fetch(`http://localhost:3000/api/stock/${firstProduct.product._id}/location`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        locationId: 'A01-01-01'
+                    })
+                });
+                
+                const updateResult = await updateResponse.json();
+                console.log('Update result:', updateResult);
+                
+                results.innerHTML = `
+                    <h2>Test Results</h2>
+                    <p>Product: ${firstProduct.product.name} (${firstProduct.product.sku})</p>
+                    <p>Previous location: ${firstProduct.location ? firstProduct.location.code : 'None'}</p>
+                    <p>Update status: ${updateResponse.status}</p>
+                    <p>Update result: <pre>${JSON.stringify(updateResult, null, 2)}</pre></p>
+                `;
+                
+            } catch (error) {
+                console.error('Test error:', error);
+                results.innerHTML = `<p>Error: ${error.message}</p>`;
+            }
+        }
+        
+        // Run test when page loads
+        testLocationUpdate();
+    </script>
+</body>
+</html>
