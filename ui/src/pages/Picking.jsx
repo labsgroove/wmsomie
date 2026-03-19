@@ -159,10 +159,10 @@ export default function Picking() {
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
                     <h3 className="font-semibold text-gray-900">
-                      {item.product?.name || 'N/A'}
+                      {item.product?.descricao || item.product?.name || 'N/A'}
                     </h3>
                     <p className="text-sm text-gray-600">
-                      SKU: {item.product?.sku || 'N/A'} | Quantidade: {item.quantity}
+                      SKU: {item.product?.codigo || item.product?.sku || 'N/A'} | Quantidade: {item.quantity}
                     </p>
                     <div className="flex items-center mt-2">
                       <MapPin className="w-4 h-4 text-gray-400 mr-1" />
