@@ -162,29 +162,52 @@ export async function syncAllStockFromOmie() {
         const currentStock = await Stock.find({ sku: product.codigo });
         const localTotal = currentStock.reduce((sum, s) => sum + s.quantity, 0);
         
-        if (localTotal > 0) {
-          // Manter o estoque local se for maior que zero
-          logger.info(`Keeping local stock for ${product.codigo}: ${localTotal} (Omie has: ${stockQuantity})`);
+        // Se houver diferença, atualizar para bater com Omie
+        if (localTotal !== stockQuantity) {
+          logger.info(`Updating stock for ${product.codigo}: ${localTotal} → ${stockQuantity} (Omie has: ${stockQuantity})`);
+          
+          if (localTotal > 0) {
+            // Atualizar estoque existente
+            const difference = stockQuantity - localTotal;
+            
+            if (currentStock.length > 0) {
+              // Distribuir a diferença no primeiro registro
+              const firstStock = currentStock[0];
+              firstStock.quantity = Math.max(0, firstStock.quantity + difference);
+              firstStock.lastUpdated = new Date();
+              firstStock.omieSyncedAt = new Date();
+              await firstStock.save();
+              
+              logger.info(`Updated stock record for ${product.codigo} by ${difference > 0 ? '+' : ''}${difference}`);
+            }
+          } else {
+            // Criar/atualizar estoque em RECEBIMENTO
+            await Stock.findOneAndUpdate(
+              { sku: product.codigo, locationCode: 'RECEBIMENTO' },
+              { 
+                quantity: stockQuantity,
+                lastUpdated: new Date(),
+                omieSyncedAt: new Date()
+              },
+              { upsert: true, new: true }
+            );
+            
+            logger.info(`Created stock record for ${product.codigo} with ${stockQuantity} units`);
+          }
+          
           syncedCount++;
-          logger.logStockSync(product, 'kept_local_stock', localTotal);
+          logger.logStockSync(product, 'updated_to_omie', stockQuantity);
         } else {
-          // Criar/atualizar estoque em RECEBIMENTO
-          await Stock.findOneAndUpdate(
-            { sku: product.codigo, locationCode: 'RECEBIMENTO' },
-            { 
-              quantity: stockQuantity,
-              lastUpdated: new Date(),
-              omieSyncedAt: new Date()
-            },
-            { upsert: true, new: true }
-          );
-          
-          // Atualizar a localização de recebimento também
-          await receivingLocation.updateSku(product.codigo, stockQuantity, 0);
-          
+          // Estoque já sincronizado
+          logger.info(`Stock already synchronized for ${product.codigo}: ${localTotal}`);
           syncedCount++;
-          logger.logStockSync(product, 'synced_to_receiving', stockQuantity);
+          logger.logStockSync(product, 'already_synced', localTotal);
         }
+        
+        await receivingLocation.updateSku(product.codigo, stockQuantity, 0);
+        
+        syncedCount++;
+        logger.logStockSync(product, 'synced_to_receiving', stockQuantity);
       } else {
         logger.warn(`No stock quantity found for product ${product.codigo}`);
       }

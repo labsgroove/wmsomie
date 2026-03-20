@@ -113,3 +113,34 @@ export async function searchProductsInOmie(query = '') {
     throw error;
   }
 }
+
+export async function syncProductFromOmie(productCode) {
+  try {
+    logger.debug(`Syncing individual product ${productCode} from Omie`);
+    
+    const result = await callOmie(
+      'geral/produtos/',
+      'ConsultarProduto',
+      {
+        codigo_produto: productCode
+      }
+    );
+
+    const productData = result.produto_servico_cadastro;
+    if (!productData) {
+      throw new Error(`Product ${productCode} not found in Omie`);
+    }
+
+    // Usar o método existente para criar/atualizar o produto
+    await Product.createFromOmie(productData);
+    
+    const product = await Product.findOne({ codigo: productCode });
+    
+    logger.debug(`Product ${productCode} synced successfully`);
+    return product;
+
+  } catch (error) {
+    logger.error(`Failed to sync product ${productCode}`, { error: error.message });
+    throw error;
+  }
+}

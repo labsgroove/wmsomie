@@ -9,11 +9,15 @@ import Stock from '../models/Stock.js';
 import Product from '../models/Product.js';
 import Location from '../models/Location.js';
 import syncRoutes from './sync.js';
+import webhookRoutes from './webhook.js';
 
 const router = Router();
 
 // Sync routes
 router.use('/sync', syncRoutes);
+
+// Webhook routes
+router.use('/webhook', webhookRoutes);
 
 // Endpoints de localização
 router.post('/locations', locationController.createLocationController);
@@ -118,6 +122,17 @@ router.get('/picking', async (req, res) => {
 });
 
 router.post('/picking/:orderId', pickingController.createPicking);
+
+// Rotas de gerenciamento de estoque no picking
+router.get('/picking/:pickingId/allocations', pickingController.getPickingWithAllocations);
+router.post('/picking/:pickingId/reserve', pickingController.reserveStock);
+router.post('/picking/:pickingId/confirm', pickingController.confirmPicking);
+router.post('/picking/:pickingId/cancel', pickingController.cancelPicking);
+
+// Rotas de consulta de estoque e alocações
+router.get('/stock/allocation/:productSku', pickingController.getStockAllocation);
+router.get('/stock/available/:productSku', pickingController.getAvailableStock);
+router.get('/stock/reservation/:productSku', pickingController.getReservationStatus);
 
 router.patch('/picking/:id/status', async (req, res) => {
   try {

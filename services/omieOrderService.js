@@ -52,3 +52,69 @@ export async function syncOrders() {
 
   return syncedCount;
 }
+
+export async function syncOrderFromOmie(orderCode) {
+  try {
+    console.log(`Syncing order ${orderCode} from Omie`);
+    
+    const response = await callOmie(
+      'produtos/pedido/',
+      'ConsultarPedido',
+      { codigo_pedido: orderCode }
+    );
+
+    const pedido = response.pedido_venda_produto;
+    if (!pedido) {
+      throw new Error(`Order ${orderCode} not found in Omie`);
+    }
+
+    const items = [];
+
+    // Verificar se o pedido tem itens
+    if (!pedido.det || pedido.det.length === 0) {
+      console.log(`Order ${orderCode} has no items, creating empty order`);
+    } else {
+      for (const item of pedido.det || []) {
+        const product = await Product.findOne({ 
+          codigo: item.produto.codigo_produto 
+        });
+        
+        if (!product) {
+          console.log(`Product ${item.produto.codigo_produto} not found, skipping item...`);
+          continue;
+        }
+
+        items.push({
+          product: product._id,
+          quantity: item.produto.quantidade,
+          price: item.produto.valor_unitario,
+          total: item.produto.valor_total
+        });
+      }
+    }
+
+    // Criar ou atualizar o pedido
+    const orderData = {
+      omieId: orderCode,
+      items,
+      status: pedido.cabecalho?.status || 'open',
+      total: pedido.cabecalho?.valor_total || 0,
+      customer: pedido.cabecalho?.cliente?.nome || '',
+      orderDate: new Date(pedido.cabecalho?.data_previsao || Date.now()),
+      updatedAt: new Date()
+    };
+
+    const order = await Order.findOneAndUpdate(
+      { omieId: orderCode },
+      orderData,
+      { upsert: true, new: true }
+    ).populate('items.product');
+
+    console.log(`Order ${orderCode} synced successfully with ${items.length} items`);
+    return order;
+
+  } catch (error) {
+    console.error(`Error syncing order ${orderCode}:`, error);
+    throw error;
+  }
+}
