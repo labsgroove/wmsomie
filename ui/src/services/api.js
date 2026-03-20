@@ -34,6 +34,13 @@ export const orderApi = {
   updateOrderStatus: (id, status) => api.patch(`/orders/${id}`, { status }),
 };
 
+export const pickingApi = {
+  // Gera picking a partir do pedido (retorna picking com referências; a UI usa a listagem para populates)
+  createPicking: (orderId) => api.post(`/picking/${orderId}`),
+  // Lista pickings com populate de order, items.product e items.location
+  listPickings: () => api.get('/picking'),
+};
+
 export const stockApi = {
   getStock: () => api.get('/stock'),
   updateLocation: (productId, locationId) => api.patch(`/stock/${productId}/location`, { locationId }),
