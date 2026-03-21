@@ -519,7 +519,7 @@ export default function Picking() {
                             <div className="flex items-center">
                               <MapPin className="w-4 h-4 text-gray-400 mr-1" />
                               <span>
-                                {item.location?.description || item.location?.code || 'Não endereçado'}
+                                {item.location?.code || 'Não endereçado'}
                               </span>
                             </div>
                           </td>
@@ -587,7 +587,7 @@ export default function Picking() {
                     {item.product?.codigo || 'N/A'}
                   </td>
                   <td className="border border-gray-300 px-2 py-2 align-top">
-                    {item.location?.description || item.location?.code || 'Não endereçado'}
+                    {item.location?.code || 'Não endereçado'}
                   </td>
                   <td className="border border-gray-300 px-2 py-2 text-right">
                     {item.quantity}
