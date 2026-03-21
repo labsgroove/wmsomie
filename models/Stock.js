@@ -182,11 +182,15 @@ StockSchema.methods.moveToLocation = function(newLocationCode, quantity) {
   
   return this.constructor.findOneAndUpdate(
     { 
+      tenantId: this.tenantId,
       sku: this.sku, 
       locationCode: newLocationCode,
       batchNumber: this.batchNumber || null
     },
     { 
+      tenantId: this.tenantId,
+      sku: this.sku,
+      locationCode: newLocationCode,
       $inc: { quantity: quantity },
       lastUpdated: new Date(),
       source: 'TRANSFER',

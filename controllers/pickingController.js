@@ -33,6 +33,11 @@ export async function getStockAllocation(req, res) {
   try {
     const { productSku } = req.params;
     const { quantity } = req.query;
+    const tenantId = req.user?.tenantId;
+
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
 
     if (!quantity || isNaN(quantity)) {
       return res.status(400).json({ error: 'Quantity parameter is required' });
@@ -40,7 +45,8 @@ export async function getStockAllocation(req, res) {
 
     const allocation = await stockReservationService.suggestStockAllocation(
       productSku, 
-      parseInt(quantity)
+      parseInt(quantity),
+      tenantId
     );
 
     res.json(allocation);
@@ -55,7 +61,13 @@ export async function getStockAllocation(req, res) {
 export async function getAvailableStock(req, res) {
   try {
     const { productSku } = req.params;
-    const stocks = await stockReservationService.getAvailableStockByLocation(productSku);
+    const tenantId = req.user?.tenantId;
+
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
+
+    const stocks = await stockReservationService.getAvailableStockByLocation(productSku, tenantId);
     res.json(stocks);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -69,6 +81,11 @@ export async function reserveStock(req, res) {
   try {
     const { pickingId } = req.params;
     const { allocations } = req.body;
+    const tenantId = req.user?.tenantId;
+
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
 
     if (!allocations || !Array.isArray(allocations)) {
       return res.status(400).json({ error: 'Allocations array is required' });
@@ -83,7 +100,7 @@ export async function reserveStock(req, res) {
       }
     }
 
-    const result = await stockReservationService.reserveStockForPicking(pickingId, allocations);
+    const result = await stockReservationService.reserveStockForPicking(pickingId, allocations, tenantId);
     res.json(result);
 
   } catch (error) {
@@ -98,6 +115,11 @@ export async function confirmPicking(req, res) {
   try {
     const { pickingId } = req.params;
     const { allocations } = req.body;
+    const tenantId = req.user?.tenantId;
+
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
 
     if (!allocations || !Array.isArray(allocations)) {
       return res.status(400).json({ error: 'Allocations array is required' });
@@ -112,7 +134,7 @@ export async function confirmPicking(req, res) {
       }
     }
 
-    const result = await stockReservationService.confirmPicking(pickingId, allocations);
+    const result = await stockReservationService.confirmPicking(pickingId, allocations, tenantId);
     res.json(result);
 
   } catch (error) {
@@ -126,7 +148,13 @@ export async function confirmPicking(req, res) {
 export async function cancelPicking(req, res) {
   try {
     const { pickingId } = req.params;
-    const result = await stockReservationService.cancelPicking(pickingId);
+    const tenantId = req.user?.tenantId;
+
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
+
+    const result = await stockReservationService.cancelPicking(pickingId, tenantId);
     res.json(result);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -139,7 +167,13 @@ export async function cancelPicking(req, res) {
 export async function getReservationStatus(req, res) {
   try {
     const { productSku } = req.params;
-    const status = await stockReservationService.getStockReservationStatus(productSku);
+    const tenantId = req.user?.tenantId;
+
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
+
+    const status = await stockReservationService.getStockReservationStatus(productSku, tenantId);
     res.json(status);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -152,8 +186,13 @@ export async function getReservationStatus(req, res) {
 export async function getPickingWithAllocations(req, res) {
   try {
     const { pickingId } = req.params;
+    const tenantId = req.user?.tenantId;
+
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
     
-    const picking = await Picking.findById(pickingId)
+    const picking = await Picking.findOne({ _id: pickingId, tenantId })
       .populate('order')
       .populate('items.product');
 
@@ -167,7 +206,8 @@ export async function getPickingWithAllocations(req, res) {
         const product = await item.product;
         const allocation = await stockReservationService.suggestStockAllocation(
           product.codigo,
-          item.quantity
+          item.quantity,
+          tenantId
         );
 
         return {
