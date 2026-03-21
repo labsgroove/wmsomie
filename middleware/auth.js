@@ -75,4 +75,14 @@ export const restrictTo = (...roles) => {
   };
 };
 
+export const restrictToAdmin = (req, res, next) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({
+      success: false,
+      message: 'Apenas administradores podem realizar esta ação'
+    });
+  }
+  next();
+};
+
 export { JWT_SECRET, JWT_EXPIRES_IN };

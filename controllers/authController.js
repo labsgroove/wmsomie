@@ -216,6 +216,13 @@ export const updatePassword = async (req, res) => {
 
 export const updateOmieConfig = async (req, res) => {
   try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Apenas administradores podem configurar a API'
+      });
+    }
+    
     const { appKey, appSecret } = req.body;
     
     const updates = {
@@ -284,6 +291,13 @@ export const updateSettings = async (req, res) => {
 
 export const deleteAccount = async (req, res) => {
   try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Apenas administradores podem excluir contas'
+      });
+    }
+    
     const { password } = req.body;
     
     if (!password) {

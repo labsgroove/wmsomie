@@ -27,7 +27,6 @@ const userSchema = new mongoose.Schema({
   },
   tenantId: {
     type: String,
-    unique: true,
     sparse: true
   },
   role: {

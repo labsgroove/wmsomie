@@ -157,11 +157,75 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Team management functions (admin only)
+  const getTeamMembers = async () => {
+    try {
+      const response = await api.get('/team/members');
+      return { success: true, data: response.data.data.members };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.message || 'Erro ao buscar membros do time'
+      };
+    }
+  };
+
+  const createTeamMember = async (memberData) => {
+    try {
+      const response = await api.post('/team/members', memberData);
+      return { success: true, data: response.data.data.user };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.message || 'Erro ao criar membro do time'
+      };
+    }
+  };
+
+  const updateTeamMember = async (userId, updates) => {
+    try {
+      const response = await api.patch(`/team/members/${userId}`, updates);
+      return { success: true, data: response.data.data.user };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.message || 'Erro ao atualizar membro do time'
+      };
+    }
+  };
+
+  const deleteTeamMember = async (userId) => {
+    try {
+      await api.delete(`/team/members/${userId}`);
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.message || 'Erro ao excluir membro do time'
+      };
+    }
+  };
+
+  const resetTeamMemberPassword = async (userId, newPassword) => {
+    try {
+      await api.patch(`/team/members/${userId}/reset-password`, { newPassword });
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.message || 'Erro ao redefinir senha'
+      };
+    }
+  };
+
+  const isAdmin = user?.role === 'admin';
+
   const value = {
     user,
     token,
     isAuthenticated,
     loading,
+    isAdmin,
     login,
     register,
     logout,
@@ -169,7 +233,12 @@ export const AuthProvider = ({ children }) => {
     updatePassword,
     updateOmieConfig,
     updateSettings,
-    deleteAccount
+    deleteAccount,
+    getTeamMembers,
+    createTeamMember,
+    updateTeamMember,
+    deleteTeamMember,
+    resetTeamMemberPassword
   };
 
   return (

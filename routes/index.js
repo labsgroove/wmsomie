@@ -11,6 +11,7 @@ import Location from '../models/Location.js';
 import syncRoutes from './sync.js';
 import webhookRoutes from './webhook.js';
 import authRoutes from './auth.js';
+import teamRoutes from './team.js';
 import { protect } from '../middleware/auth.js';
 
 const router = Router();
@@ -23,6 +24,9 @@ router.use('/sync', protect, syncRoutes);
 
 // Webhook routes (públicas - webhooks externas precisam acessar)
 router.use('/webhook', webhookRoutes);
+
+// Team routes (protegidas - middleware de admin está dentro das rotas)
+router.use('/team', teamRoutes);
 
 // Endpoints de localização (protegidos)
 router.post('/locations', protect, locationController.createLocationController);

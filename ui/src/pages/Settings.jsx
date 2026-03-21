@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { 
   User, 
@@ -11,11 +11,30 @@ import {
   CheckCircle,
   AlertCircle,
   ExternalLink,
-  ChevronRight
+  ChevronRight,
+  Users,
+  Plus,
+  Edit2,
+  X,
+  UserCog
 } from 'lucide-react';
 
 export default function Settings() {
-  const { user, updateProfile, updatePassword, updateOmieConfig, updateSettings, deleteAccount, logout } = useAuth();
+  const { 
+    user, 
+    updateProfile, 
+    updatePassword, 
+    updateOmieConfig, 
+    updateSettings, 
+    deleteAccount, 
+    logout,
+    isAdmin,
+    getTeamMembers,
+    createTeamMember,
+    updateTeamMember,
+    deleteTeamMember,
+    resetTeamMemberPassword
+  } = useAuth();
   
   const [activeTab, setActiveTab] = useState('profile');
   const [loading, setLoading] = useState(false);
@@ -53,6 +72,128 @@ export default function Settings() {
   // Delete account
   const [deletePassword, setDeletePassword] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // Team management state
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [showEditMember, setShowEditMember] = useState(null);
+  const [showResetPassword, setShowResetPassword] = useState(null);
+  const [newMemberData, setNewMemberData] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'user'
+  });
+  const [editMemberData, setEditMemberData] = useState({
+    name: '',
+    email: '',
+    role: '',
+    isActive: true
+  });
+  const [resetPasswordData, setResetPasswordData] = useState('');
+
+  // Load team members when tab changes to team
+  useEffect(() => {
+    if (activeTab === 'team' && isAdmin) {
+      loadTeamMembers();
+    }
+  }, [activeTab, isAdmin]);
+
+  const loadTeamMembers = async () => {
+    setLoading(true);
+    const result = await getTeamMembers();
+    if (result.success) {
+      setTeamMembers(result.data);
+    } else {
+      setMessage({ type: 'error', text: result.error });
+    }
+    setLoading(false);
+  };
+
+  const handleCreateMember = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setMessage({ type: '', text: '' });
+    
+    const result = await createTeamMember(newMemberData);
+    
+    if (result.success) {
+      setMessage({ type: 'success', text: 'Membro do time criado com sucesso!' });
+      setShowAddMember(false);
+      setNewMemberData({ name: '', email: '', password: '', role: 'user' });
+      loadTeamMembers();
+    } else {
+      setMessage({ type: 'error', text: result.error });
+    }
+    
+    setLoading(false);
+  };
+
+  const handleUpdateMember = async (e) => {
+    e.preventDefault();
+    if (!showEditMember) return;
+    
+    setLoading(true);
+    setMessage({ type: '', text: '' });
+    
+    const result = await updateTeamMember(showEditMember, editMemberData);
+    
+    if (result.success) {
+      setMessage({ type: 'success', text: 'Membro do time atualizado com sucesso!' });
+      setShowEditMember(null);
+      loadTeamMembers();
+    } else {
+      setMessage({ type: 'error', text: result.error });
+    }
+    
+    setLoading(false);
+  };
+
+  const handleDeleteMember = async (userId) => {
+    if (!confirm('Tem certeza que deseja excluir este membro?')) return;
+    
+    setLoading(true);
+    const result = await deleteTeamMember(userId);
+    
+    if (result.success) {
+      setMessage({ type: 'success', text: 'Membro do time excluído com sucesso!' });
+      loadTeamMembers();
+    } else {
+      setMessage({ type: 'error', text: result.error });
+    }
+    
+    setLoading(false);
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    if (!showResetPassword) return;
+    
+    setLoading(true);
+    setMessage({ type: '', text: '' });
+    
+    const result = await resetTeamMemberPassword(showResetPassword, resetPasswordData);
+    
+    if (result.success) {
+      setMessage({ type: 'success', text: 'Senha redefinida com sucesso!' });
+      setShowResetPassword(null);
+      setResetPasswordData('');
+    } else {
+      setMessage({ type: 'error', text: result.error });
+    }
+    
+    setLoading(false);
+  };
+
+  const openEditModal = (member) => {
+    setShowEditMember(member._id);
+    setEditMemberData({
+      name: member.name,
+      email: member.email,
+      role: member.role,
+      isActive: member.isActive
+    });
+  };
 
   const handleProfileUpdate = async (e) => {
     e.preventDefault();
@@ -147,9 +288,10 @@ export default function Settings() {
   const tabs = [
     { id: 'profile', label: 'Perfil', icon: User },
     { id: 'password', label: 'Senha', icon: Lock },
-    { id: 'omie', label: 'API Omie', icon: Key },
+    ...(isAdmin ? [{ id: 'team', label: 'Time', icon: Users }] : []),
+    ...(isAdmin ? [{ id: 'omie', label: 'API Omie', icon: Key }] : []),
     { id: 'preferences', label: 'Preferências', icon: Palette },
-    { id: 'danger', label: 'Zona de Perigo', icon: Trash2, danger: true }
+    ...(isAdmin ? [{ id: 'danger', label: 'Zona de Perigo', icon: Trash2, danger: true }] : [])
   ];
 
   return (
@@ -323,6 +465,267 @@ export default function Settings() {
                   </button>
                 </div>
               </form>
+            </div>
+          )}
+
+          {/* Team Management Tab */}
+          {activeTab === 'team' && isAdmin && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Gestão de Time</h2>
+                  <p className="text-sm text-gray-500">Gerencie os usuários do seu tenant</p>
+                </div>
+                <button
+                  onClick={() => setShowAddMember(true)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition flex items-center"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Adicionar Membro
+                </button>
+              </div>
+
+              {/* Add Member Modal */}
+              {showAddMember && (
+                <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <h3 className="text-sm font-semibold text-blue-900 mb-4">Novo Membro</h3>
+                  <form onSubmit={handleCreateMember} className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
+                        <input
+                          type="text"
+                          value={newMemberData.name}
+                          onChange={(e) => setNewMemberData({ ...newMemberData, name: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                        <input
+                          type="email"
+                          value={newMemberData.email}
+                          onChange={(e) => setNewMemberData({ ...newMemberData, email: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
+                        <input
+                          type="password"
+                          value={newMemberData.password}
+                          onChange={(e) => setNewMemberData({ ...newMemberData, password: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                          required
+                          minLength={6}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Perfil</label>
+                        <select
+                          value={newMemberData.role}
+                          onChange={(e) => setNewMemberData({ ...newMemberData, role: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                        >
+                          <option value="user">Usuário</option>
+                          <option value="admin">Administrador</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex gap-3">
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition disabled:opacity-50 flex items-center"
+                      >
+                        {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        Criar Membro
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddMember(false)}
+                        className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* Edit Member Modal */}
+              {showEditMember && (
+                <div className="mb-6 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                  <h3 className="text-sm font-semibold text-yellow-900 mb-4">Editar Membro</h3>
+                  <form onSubmit={handleUpdateMember} className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
+                        <input
+                          type="text"
+                          value={editMemberData.name}
+                          onChange={(e) => setEditMemberData({ ...editMemberData, name: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                        <input
+                          type="email"
+                          value={editMemberData.email}
+                          onChange={(e) => setEditMemberData({ ...editMemberData, email: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Perfil</label>
+                        <select
+                          value={editMemberData.role}
+                          onChange={(e) => setEditMemberData({ ...editMemberData, role: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                        >
+                          <option value="user">Usuário</option>
+                          <option value="admin">Administrador</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                        <select
+                          value={editMemberData.isActive}
+                          onChange={(e) => setEditMemberData({ ...editMemberData, isActive: e.target.value === 'true' })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                        >
+                          <option value={true}>Ativo</option>
+                          <option value={false}>Inativo</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex gap-3">
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition disabled:opacity-50 flex items-center"
+                      >
+                        {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        Salvar Alterações
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowEditMember(null)}
+                        className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* Reset Password Modal */}
+              {showResetPassword && (
+                <div className="mb-6 p-4 bg-purple-50 rounded-lg border border-purple-200">
+                  <h3 className="text-sm font-semibold text-purple-900 mb-4">Redefinir Senha</h3>
+                  <form onSubmit={handleResetPassword} className="space-y-4 max-w-md">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Nova Senha</label>
+                      <input
+                        type="password"
+                        value={resetPasswordData}
+                        onChange={(e) => setResetPasswordData(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                        required
+                        minLength={6}
+                      />
+                    </div>
+                    <div className="flex gap-3">
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium transition disabled:opacity-50 flex items-center"
+                      >
+                        {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        Redefinir Senha
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowResetPassword(null)}
+                        className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* Team Members List */}
+              <div className="space-y-3">
+                {teamMembers.length === 0 ? (
+                  <p className="text-gray-500 text-center py-8">Nenhum membro do time encontrado.</p>
+                ) : (
+                  teamMembers.map((member) => (
+                    <div
+                      key={member._id}
+                      className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                          member.role === 'admin' ? 'bg-blue-100 text-blue-600' : 'bg-gray-200 text-gray-600'
+                        }`}>
+                          {member.role === 'admin' ? <UserCog className="w-5 h-5" /> : <User className="w-5 h-5" />}
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-900">{member.name}</p>
+                          <p className="text-sm text-gray-500">{member.email}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              member.role === 'admin' 
+                                ? 'bg-blue-100 text-blue-700' 
+                                : 'bg-gray-100 text-gray-600'
+                            }`}>
+                              {member.role === 'admin' ? 'Admin' : 'Usuário'}
+                            </span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              member.isActive 
+                                ? 'bg-green-100 text-green-700' 
+                                : 'bg-red-100 text-red-700'
+                            }`}>
+                              {member.isActive ? 'Ativo' : 'Inativo'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setShowResetPassword(member._id)}
+                          className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition"
+                          title="Redefinir senha"
+                        >
+                          <Lock className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => openEditModal(member)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                          title="Editar"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteMember(member._id)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                          title="Excluir"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           )}
 
