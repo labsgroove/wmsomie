@@ -12,7 +12,9 @@ import syncRoutes from './sync.js';
 import webhookRoutes from './webhook.js';
 import authRoutes from './auth.js';
 import teamRoutes from './team.js';
+import paymentRoutes from './payments.js';
 import { protect } from '../middleware/auth.js';
+import { requireCredits, consumeCredit } from '../middleware/credits.js';
 
 const router = Router();
 
@@ -27,6 +29,9 @@ router.use('/webhook', webhookRoutes);
 
 // Team routes (protegidas - middleware de admin está dentro das rotas)
 router.use('/team', teamRoutes);
+
+// Payment routes
+router.use('/payments', paymentRoutes);
 
 // Endpoints de localização (protegidos)
 router.post('/locations', protect, locationController.createLocationController);

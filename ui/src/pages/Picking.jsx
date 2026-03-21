@@ -140,24 +140,34 @@ export default function Picking() {
       setSelectedOrder(order);
     } catch (error) {
       console.error('Error generating picking:', error);
-      setError(error?.response?.data?.error || error.message);
-      // Fallback: exibir itens do pedido mesmo que não consiga gerar picking com local.
-      try {
-        const orderRes = await orderApi.getOrder(order._id);
-        const orderData = orderRes.data;
-
-        setSelectedOrder(orderData);
-        setPickingList({
-          order: { omieId: orderData.omieId },
-          items: (orderData.items || []).map((it) => ({
-            product: it.product,
-            location: null,
-            quantity: it.quantity
-          }))
-        });
-      } catch (fallbackError) {
-        console.error('Picking fallback error:', fallbackError);
+      const errorCode = error?.response?.data?.code;
+      const errorMessage = error?.response?.data?.error || error.message;
+      
+      setError(errorMessage);
+      
+      // Se for erro de créditos insuficientes, não fazer fallback
+      if (errorCode === 'INSUFFICIENT_CREDITS') {
         setPickingList(null);
+        setSelectedOrder(null);
+      } else {
+        // Fallback: exibir itens do pedido mesmo que não consiga gerar picking com local.
+        try {
+          const orderRes = await orderApi.getOrder(order._id);
+          const orderData = orderRes.data;
+
+          setSelectedOrder(orderData);
+          setPickingList({
+            order: { omieId: orderData.omieId },
+            items: (orderData.items || []).map((it) => ({
+              product: it.product,
+              location: null,
+              quantity: it.quantity
+            }))
+          });
+        } catch (fallbackError) {
+          console.error('Picking fallback error:', fallbackError);
+          setPickingList(null);
+        }
       }
     }
     finally {

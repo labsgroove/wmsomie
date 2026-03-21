@@ -28,7 +28,11 @@ export const register = async (req, res) => {
       name,
       companyName: companyName || '',
       tenantId,
-      role: 'admin'
+      role: 'admin',
+      subscription: {
+        credits: 42, // Créditos iniciais gratuitos para teste
+        plan: 'free'
+      }
     });
     
     const token = generateToken(user._id);
@@ -327,6 +331,27 @@ export const deleteAccount = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Erro ao excluir conta',
+      error: error.message
+    });
+  }
+};
+
+export const getCredits = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select('subscription.credits subscription.plan');
+    
+    res.json({
+      success: true,
+      data: {
+        credits: user?.subscription?.credits || 0,
+        plan: user?.subscription?.plan || 'free'
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao buscar créditos:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao buscar saldo de créditos',
       error: error.message
     });
   }

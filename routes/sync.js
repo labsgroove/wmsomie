@@ -1,5 +1,7 @@
 // src/routes/sync.js
 import express from 'express';
+import { consumeCredit } from '../middleware/credits.js';
+import User from '../models/User.js';
 import { 
   syncAllStockFromOmie, 
   sendStockToOmie, 
@@ -17,20 +19,41 @@ import Movement from '../models/Movement.js';
 
 const router = express.Router();
 
+// Helper para verificar e consumir créditos
+async function checkAndConsumeCredits(userId, action) {
+  const user = await User.findById(userId);
+  const credits = user?.subscription?.credits || 0;
+  
+  if (credits < 1) {
+    const error = new Error('Créditos insuficientes. Compre créditos para sincronizar com a Omie.');
+    error.code = 'INSUFFICIENT_CREDITS';
+    error.statusCode = 403;
+    throw error;
+  }
+  
+  return await consumeCredit(userId, action);
+}
+
 // Stock sync routes
 router.post('/stock/from-omie', async (req, res) => {
   try {
+    // Verificar e consumir crédito
+    const remainingCredits = await checkAndConsumeCredits(req.user._id, 'sync_stock');
+    
     const result = await syncAllStockFromOmie(req.user._id);
     res.json({
       success: true,
       syncedCount: result.syncedCount,
       errors: result.errors,
+      remainingCredits,
       message: `Synced ${result.syncedCount} products from Omie`
     });
   } catch (error) {
-    res.status(500).json({ 
+    const statusCode = error.statusCode || 500;
+    res.status(statusCode).json({ 
       success: false, 
-      error: error.message 
+      error: error.message,
+      code: error.code
     });
   }
 });
@@ -170,17 +193,23 @@ router.post('/locations/from-omie', async (req, res) => {
 // Order sync routes
 router.post('/orders', async (req, res) => {
   try {
+    // Verificar e consumir crédito
+    const remainingCredits = await checkAndConsumeCredits(req.user._id, 'sync_orders');
+    
     const { syncOrders } = await import('../services/omieOrderService.js');
     const count = await syncOrders(req.user._id);
     res.json({
       success: true,
       syncedCount: count,
+      remainingCredits,
       message: `Synced ${count} orders from Omie`
     });
   } catch (error) {
-    res.status(500).json({ 
+    const statusCode = error.statusCode || 500;
+    res.status(statusCode).json({ 
       success: false, 
-      error: error.message 
+      error: error.message,
+      code: error.code
     });
   }
 });
@@ -205,6 +234,9 @@ router.post('/products/from-omie', async (req, res) => {
 // Full sync route
 router.post('/full', async (req, res) => {
   try {
+    // Verificar e consumir crédito para sync completo
+    const remainingCredits = await checkAndConsumeCredits(req.user._id, 'sync_full');
+    
     const userId = req.user._id;
     const results = {
       products: { syncedCount: 0, errors: [] },
@@ -257,6 +289,7 @@ router.post('/full', async (req, res) => {
     res.json({
       success: totalErrors === 0,
       results,
+      remainingCredits,
       summary: {
         totalSynced,
         totalErrors
@@ -264,9 +297,11 @@ router.post('/full', async (req, res) => {
       message: `Full sync completed: ${totalSynced} items synced, ${totalErrors} errors`
     });
   } catch (error) {
-    res.status(500).json({ 
+    const statusCode = error.statusCode || 500;
+    res.status(statusCode).json({ 
       success: false, 
-      error: error.message 
+      error: error.message,
+      code: error.code
     });
   }
 });

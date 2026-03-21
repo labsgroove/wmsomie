@@ -7,7 +7,8 @@ import {
   updatePassword,
   updateOmieConfig,
   updateSettings,
-  deleteAccount
+  deleteAccount,
+  getCredits
 } from '../controllers/authController.js';
 import { protect } from '../middleware/auth.js';
 
@@ -17,6 +18,7 @@ router.post('/register', register);
 router.post('/login', login);
 
 router.get('/profile', protect, getProfile);
+router.get('/credits', protect, getCredits);
 router.patch('/profile', protect, updateProfile);
 router.patch('/password', protect, updatePassword);
 router.patch('/omie-config', protect, updateOmieConfig);

@@ -1,16 +1,17 @@
 // ui/src/App.jsx
 import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
-import { Package, Home, Truck, Settings, User, LogOut } from 'lucide-react';
+import { Package, Home, Truck, Settings, User, LogOut, Coins } from 'lucide-react';
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Stock from './pages/Stock.jsx';
 import Picking from './pages/Picking.jsx';
 import Auth from './pages/Auth.jsx';
 import SettingsPage from './pages/Settings.jsx';
+import Credits from './pages/Credits.jsx';
 
 function Navigation() {
   const location = useLocation();
-  const { user, isAuthenticated, logout } = useAuth();
+  const { user, isAuthenticated, logout, credits } = useAuth();
   
   const isActive = (path) => {
     return location.pathname === path;
@@ -61,6 +62,17 @@ function Navigation() {
                 Separação
               </Link>
               <Link
+                to="/credits"
+                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
+                  isActive('/credits')
+                    ? 'border-blue-500 text-gray-900'
+                    : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                }`}
+              >
+                <Coins className="w-4 h-4 mr-2" />
+                Créditos
+              </Link>
+              <Link
                 to="/settings"
                 className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
                   isActive('/settings')
@@ -78,6 +90,8 @@ function Navigation() {
             <div className="flex items-center text-sm text-gray-600">
               <User className="w-4 h-4 mr-1" />
               <span className="hidden md:inline">{user?.name}</span>
+              <span className="hidden md:inline"> | </span>
+              <span className="hidden md:inline">{credits} créditos</span>
             </div>
             <button
               onClick={logout}
@@ -152,6 +166,11 @@ function AppContent() {
         <Route path="/picking" element={
           <ProtectedRoute>
             <Picking />
+          </ProtectedRoute>
+        } />
+        <Route path="/credits" element={
+          <ProtectedRoute>
+            <Credits />
           </ProtectedRoute>
         } />
         <Route path="/settings" element={

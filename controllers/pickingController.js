@@ -3,14 +3,51 @@ import { generatePicking } from '../services/pickingService.js';
 import stockReservationService from '../services/stockReservationService.js';
 import Picking from '../models/Picking.js';
 import Order from '../models/Order.js';
+import User from '../models/User.js';
+import syncLogger from '../utils/syncLogger.js';
+
+async function consumeUserCredit(userId, operation) {
+  try {
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { $inc: { 'subscription.credits': -1 } },
+      { new: true }
+    );
+    
+    syncLogger.info('Crédito consumido', {
+      userId,
+      operation,
+      remainingCredits: user?.subscription?.credits || 0
+    });
+    
+    return user?.subscription?.credits || 0;
+  } catch (error) {
+    syncLogger.error('Erro ao consumir crédito', { error: error.message, userId });
+    return null;
+  }
+}
 
 export async function createPicking(req, res) {
   try {
     const { orderId } = req.params;
     const tenantId = req.user.tenantId;
+    const userId = req.user._id || req.user.id;
     
     if (!tenantId) {
       return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
+    
+    // Verificar créditos do usuário
+    const user = await User.findById(userId);
+    const credits = user?.subscription?.credits || 0;
+    
+    if (credits < 1) {
+      return res.status(403).json({ 
+        success: false,
+        error: 'Créditos insuficientes. Compre créditos para gerar listas de picking.',
+        code: 'INSUFFICIENT_CREDITS',
+        credits: 0
+      });
     }
     
     // Verificar se o pedido pertence ao tenant
@@ -20,7 +57,15 @@ export async function createPicking(req, res) {
     }
     
     const picking = await generatePicking(orderId, tenantId);
-    res.json(picking);
+    
+    // Consumir crédito após sucesso
+    const remainingCredits = await consumeUserCredit(userId, 'picking_create');
+    
+    res.json({
+      ...picking.toObject(),
+      creditsConsumed: true,
+      remainingCredits
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

@@ -16,6 +16,7 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [credits, setCredits] = useState(0);
 
   useEffect(() => {
     const initAuth = async () => {
@@ -25,6 +26,7 @@ export const AuthProvider = ({ children }) => {
           api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
           const response = await api.get('/auth/profile');
           setUser(response.data.data.user);
+          setCredits(response.data.data.user?.subscription?.credits || 0);
           setIsAuthenticated(true);
         } catch (error) {
           console.error('Erro ao carregar perfil:', error);
@@ -47,6 +49,7 @@ export const AuthProvider = ({ children }) => {
       
       setToken(newToken);
       setUser(userData);
+      setCredits(userData?.subscription?.credits || 0);
       setIsAuthenticated(true);
       
       return { success: true };
@@ -68,6 +71,7 @@ export const AuthProvider = ({ children }) => {
       
       setToken(newToken);
       setUser(newUser);
+      setCredits(newUser?.subscription?.credits || 0);
       setIsAuthenticated(true);
       
       return { success: true };
@@ -226,6 +230,8 @@ export const AuthProvider = ({ children }) => {
     isAuthenticated,
     loading,
     isAdmin,
+    credits,
+    setCredits,
     login,
     register,
     logout,
