@@ -2,14 +2,6 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-const requiredEnvVars = ['OMIE_APP_KEY', 'OMIE_APP_SECRET'];
-
-for (const envVar of requiredEnvVars) {
-  if (!process.env[envVar]) {
-    throw new Error(`Missing required environment variable: ${envVar}`);
-  }
-}
-
 export const omieConfig = {
   appKey: process.env.OMIE_APP_KEY,
   appSecret: process.env.OMIE_APP_SECRET,
