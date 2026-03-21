@@ -1,7 +1,7 @@
 // ui/src/pages/Picking.jsx
 import { useState, useEffect } from 'react';
-import { Package, MapPin, CheckCircle, Clock, Search, Play, Eye, Printer } from 'lucide-react';
-import { orderApi, pickingApi } from '../services/api';
+import { Package, MapPin, CheckCircle, Clock, Search, Play, Eye, Printer, RefreshCw } from 'lucide-react';
+import { orderApi, pickingApi, syncApi } from '../services/api';
 
 // Função para ordenar itens por localização
 function sortItemsByLocation(items) {
@@ -103,6 +103,7 @@ export default function Picking() {
   const [error, setError] = useState('');
   const [selectedOrderIds, setSelectedOrderIds] = useState(new Set());
   const [isUnifiedPicking, setIsUnifiedPicking] = useState(false);
+  const [syncingOrders, setSyncingOrders] = useState(false);
 
   useEffect(() => {
     loadOrders();
@@ -232,6 +233,21 @@ export default function Picking() {
     }
   };
 
+  const syncOrders = async () => {
+    try {
+      setSyncingOrders(true);
+      setError('');
+      const response = await syncApi.syncOrders();
+      await loadOrders();
+      alert(`Sincronização concluída! ${response.data.syncedCount} pedidos sincronizados.`);
+    } catch (err) {
+      console.error('Error syncing orders:', err);
+      setError(err?.response?.data?.error || err.message || 'Erro ao sincronizar pedidos');
+    } finally {
+      setSyncingOrders(false);
+    }
+  };
+
   const completePicking = async () => {
     try {
       if (isUnifiedPicking) {
@@ -279,7 +295,18 @@ export default function Picking() {
     <div className="min-h-screen bg-gray-50">
       {/* UI interativa (oculta na hora de imprimir) */}
       <div className="no-print p-6">
-        <h1 className="text-3xl font-bold text-gray-900 mb-8">Separação de Pedidos</h1>
+        <div className="flex items-center justify-between mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">Separação de Pedidos</h1>
+          <button
+            type="button"
+            onClick={syncOrders}
+            disabled={syncingOrders}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            <RefreshCw className={`w-4 h-4 ${syncingOrders ? 'animate-spin' : ''}`} />
+            {syncingOrders ? 'Sincronizando...' : 'Sincronizar Pedidos'}
+          </button>
+        </div>
 
         <div className="flex gap-6">
           {/* Barra lateral esquerda: lista de pedidos */}

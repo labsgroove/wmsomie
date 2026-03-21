@@ -54,3 +54,7 @@ export const stockApi = {
     quantity
   }),
 };
+
+export const syncApi = {
+  syncOrders: () => api.post('/sync/orders'),
+};
