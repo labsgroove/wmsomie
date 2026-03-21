@@ -12,8 +12,11 @@ class StockReservationService {
   /**
    * Obtém estoque disponível de um produto distribuído por localizações
    */
-  async getAvailableStockByLocation(productSku) {
+  async getAvailableStockByLocation(productSku, tenantId) {
+    if (!tenantId) throw new Error('Tenant ID é obrigatório');
+    
     const stocks = await Stock.find({
+      tenantId,
       sku: productSku,
       availableQuantity: { $gt: 0 }
     });
@@ -34,8 +37,10 @@ class StockReservationService {
   /**
    * Sugere melhor distribuição de estoque para uma quantidade necessária
    */
-  async suggestStockAllocation(productSku, requiredQuantity) {
-    const availableStocks = await this.getAvailableStockByLocation(productSku);
+  async suggestStockAllocation(productSku, requiredQuantity, tenantId) {
+    if (!tenantId) throw new Error('Tenant ID é obrigatório');
+    
+    const availableStocks = await this.getAvailableStockByLocation(productSku, tenantId);
     
     // Ordenar por prioridade: FIFO (primeiro a expirar), depois quantidade disponível
     const sortedStocks = availableStocks.sort((a, b) => {
@@ -82,14 +87,17 @@ class StockReservationService {
   /**
    * Reserva estoque para um picking
    */
-  async reserveStockForPicking(pickingId, allocations) {
+  async reserveStockForPicking(pickingId, allocations, tenantId) {
+    if (!tenantId) throw new Error('Tenant ID é obrigatório');
+    
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
-      const picking = await Picking.findById(pickingId).session(session);
+      // Buscar picking filtrado por tenant
+      const picking = await Picking.findOne({ _id: pickingId, tenantId }).session(session);
       if (!picking) {
-        throw new Error('Picking não encontrado');
+        throw new Error('Picking não encontrado para este tenant');
       }
 
       const reservationResults = [];
@@ -143,14 +151,17 @@ class StockReservationService {
   /**
    * Confirma o picking e atualiza o estoque (baixa real)
    */
-  async confirmPicking(pickingId, allocations) {
+  async confirmPicking(pickingId, allocations, tenantId) {
+    if (!tenantId) throw new Error('Tenant ID é obrigatório');
+    
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
-      const picking = await Picking.findById(pickingId).populate('items.product').session(session);
+      // Buscar picking filtrado por tenant
+      const picking = await Picking.findOne({ _id: pickingId, tenantId }).populate('items.product').session(session);
       if (!picking) {
-        throw new Error('Picking não encontrado');
+        throw new Error('Picking não encontrado para este tenant');
       }
 
       if (picking.status !== 'IN_PROGRESS') {
@@ -171,8 +182,9 @@ class StockReservationService {
           throw new Error(`Reserva insuficiente em ${stock.locationCode}. Reservado: ${stock.reservedQuantity}, Solicitado: ${allocation.quantity}`);
         }
 
-        // Criar movimento de saída
+        // Criar movimento de saída com tenantId
         const movement = await Movement.create([{
+          tenantId,
           type: 'OUT',
           product: stock.sku,
           fromLocation: stock.locationCode,
@@ -224,22 +236,26 @@ class StockReservationService {
   /**
    * Cancela um picking e libera as reservas de estoque
    */
-  async cancelPicking(pickingId) {
+  async cancelPicking(pickingId, tenantId) {
+    if (!tenantId) throw new Error('Tenant ID é obrigatório');
+    
     const session = mongoose.startSession();
     session.startTransaction();
 
     try {
-      const picking = await Picking.findById(pickingId).session(session);
+      // Buscar picking filtrado por tenant
+      const picking = await Picking.findOne({ _id: pickingId, tenantId }).session(session);
       if (!picking) {
-        throw new Error('Picking não encontrado');
+        throw new Error('Picking não encontrado para este tenant');
       }
 
       if (picking.status === 'DONE') {
         throw new Error('Não é possível cancelar um picking já concluído');
       }
 
-      // Buscar todas as reservas associadas a este picking
+      // Buscar todas as reservas associadas a este picking (filtrado por tenant)
       const movements = await Movement.find({
+        tenantId,
         documentId: pickingId,
         documentType: 'PICKING',
         reason: 'STOCK_RESERVED'
@@ -247,6 +263,7 @@ class StockReservationService {
 
       for (const movement of movements) {
         const stock = await Stock.findOne({
+          tenantId,
           sku: movement.product,
           locationCode: movement.fromLocation
         }).session(session);
@@ -283,8 +300,10 @@ class StockReservationService {
   /**
    * Obtém status detalhado das reservas de um produto
    */
-  async getStockReservationStatus(productSku) {
-    const stocks = await Stock.find({ sku: productSku });
+  async getStockReservationStatus(productSku, tenantId) {
+    if (!tenantId) throw new Error('Tenant ID é obrigatório');
+    
+    const stocks = await Stock.find({ tenantId, sku: productSku });
 
     return stocks.map(stock => ({
       locationCode: stock.locationCode,

@@ -2,7 +2,8 @@
 import mongoose from 'mongoose';
 
 const LocationSchema = new mongoose.Schema({
-  code: { type: String, unique: true, required: true }, // código flexível (ex: A1, PISO1-A, RACK-01-POS-A, etc.)
+  tenantId: { type: String, required: true, index: true },
+  code: { type: String, required: true }, // código flexível (ex: A1, PISO1-A, RACK-01-POS-A, etc.)
   description: String,
   omieId: String,
   zone: String, // zona do armazém (opcional)
@@ -25,10 +26,11 @@ const LocationSchema = new mongoose.Schema({
   lastStockUpdate: { type: Date, default: Date.now }
 }, { timestamps: true });
 
-// Índices
-LocationSchema.index({ omieId: 1 });
-LocationSchema.index({ zone: 1 });
-LocationSchema.index({ type: 1 });
+// Índices compostos
+LocationSchema.index({ tenantId: 1, code: 1 }, { unique: true });
+LocationSchema.index({ tenantId: 1, omieId: 1 });
+LocationSchema.index({ tenantId: 1, zone: 1 });
+LocationSchema.index({ tenantId: 1, type: 1 });
 LocationSchema.index({ 'skus.codigo': 1 });
 LocationSchema.index({ isActive: 1 });
 
@@ -73,20 +75,24 @@ LocationSchema.methods.getSku = function(codigo) {
 };
 
 // Método estático para buscar localizações por SKU
-LocationSchema.statics.findBySku = function(codigo) {
-  return this.find({ 
+LocationSchema.statics.findBySku = function(codigo, tenantId) {
+  const query = { 
     'skus.codigo': codigo, 
     isActive: true 
-  });
+  };
+  if (tenantId) query.tenantId = tenantId;
+  return this.find(query);
 };
 
 // Método estático para buscar localização específica de um SKU
-LocationSchema.statics.findSkuLocation = function(codigo, locationCode) {
-  return this.findOne({ 
+LocationSchema.statics.findSkuLocation = function(codigo, locationCode, tenantId) {
+  const query = { 
     code: locationCode,
     'skus.codigo': codigo,
     isActive: true 
-  });
+  };
+  if (tenantId) query.tenantId = tenantId;
+  return this.findOne(query);
 };
 
 export default mongoose.model('Location', LocationSchema);

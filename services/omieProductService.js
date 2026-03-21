@@ -1,10 +1,22 @@
 // src/services/omieProductService.js
 import Product from '../models/Product.js';
+import User from '../models/User.js';
 import { callOmie } from './omieClient.js';
 import logger from '../utils/syncLogger.js';
 
-export async function syncProducts() {
-  logger.info('Starting product sync from Omie');
+export async function syncProducts(userId) {
+  if (!userId) {
+    throw new Error('User ID is required to sync products');
+  }
+  
+  // Buscar tenantId do usuário
+  const user = await User.findById(userId).select('tenantId');
+  if (!user || !user.tenantId) {
+    throw new Error('User not found or tenantId not configured');
+  }
+  const tenantId = user.tenantId;
+  
+  logger.info('Starting product sync from Omie', { userId, tenantId });
   
   let allProducts = [];
   let page = 1;
@@ -25,7 +37,8 @@ export async function syncProducts() {
           registros_por_pagina: pageSize,
           apenas_importado_api: "N",
           filtrar_apenas_omiepdv: "N"
-        }
+        },
+        userId
       );
 
       const produtos = response.produto_servico_cadastro || [];
@@ -36,7 +49,6 @@ export async function syncProducts() {
       } else {
         allProducts = allProducts.concat(produtos);
         
-        // Verificar se há mais páginas
         const totalPages = response.total_paginas || 1;
         if (page >= totalPages) {
           hasMore = false;
@@ -48,10 +60,10 @@ export async function syncProducts() {
 
     logger.info(`Total products found: ${allProducts.length}`);
 
-    // Sincronizar produtos
+    // Sincronizar produtos com tenantId
     for (const p of allProducts) {
       try {
-        await Product.createFromOmie(p);
+        await Product.createFromOmie(p, tenantId);
         
         syncedCount++;
         logger.debug(`Product synced: ${p.codigo} - ${p.descricao}`);
@@ -61,16 +73,20 @@ export async function syncProducts() {
       }
     }
 
-    logger.logSyncResult('products_from_omie', { syncedCount, errors });
+    logger.logSyncResult('products_from_omie', { syncedCount, errors, tenantId });
     return syncedCount;
     
   } catch (error) {
-    logger.error('Failed to sync products from Omie', { error: error.message });
+    logger.error('Failed to sync products from Omie', { error: error.message, tenantId });
     throw error;
   }
 }
 
-export async function getProductFromOmie(productOmieId) {
+export async function getProductFromOmie(productOmieId, userId) {
+  if (!userId) {
+    throw new Error('User ID is required to fetch product from Omie');
+  }
+  
   logger.debug(`Fetching product from Omie: ${productOmieId}`);
   
   try {
@@ -79,7 +95,8 @@ export async function getProductFromOmie(productOmieId) {
       'ConsultarProduto',
       {
         codigo_produto: productOmieId
-      }
+      },
+      userId
     );
 
     logger.logApiCall('ConsultarProduto', 'geral/produtos/', { productOmieId }, result);
@@ -90,7 +107,11 @@ export async function getProductFromOmie(productOmieId) {
   }
 }
 
-export async function searchProductsInOmie(query = '') {
+export async function searchProductsInOmie(query = '', userId) {
+  if (!userId) {
+    throw new Error('User ID is required to search products in Omie');
+  }
+  
   logger.debug(`Searching products in Omie: ${query}`);
   
   try {
@@ -103,7 +124,8 @@ export async function searchProductsInOmie(query = '') {
         pesquisa: query,
         apenas_importado_api: 'N',
         exibir: 'T'
-      }
+      },
+      userId
     );
 
     logger.logApiCall('ListarProdutos', 'geral/produtos/', { query }, result);
@@ -114,16 +136,28 @@ export async function searchProductsInOmie(query = '') {
   }
 }
 
-export async function syncProductFromOmie(productCode) {
+export async function syncProductFromOmie(productCode, userId) {
+  if (!userId) {
+    throw new Error('User ID is required to sync product from Omie');
+  }
+  
   try {
-    logger.debug(`Syncing individual product ${productCode} from Omie`);
+    // Buscar tenantId do usuário
+    const user = await User.findById(userId).select('tenantId');
+    if (!user || !user.tenantId) {
+      throw new Error('User not found or tenantId not configured');
+    }
+    const tenantId = user.tenantId;
+    
+    logger.debug(`Syncing individual product ${productCode} from Omie`, { tenantId });
     
     const result = await callOmie(
       'geral/produtos/',
       'ConsultarProduto',
       {
         codigo_produto: productCode
-      }
+      },
+      userId
     );
 
     const productData = result.produto_servico_cadastro;
@@ -131,12 +165,12 @@ export async function syncProductFromOmie(productCode) {
       throw new Error(`Product ${productCode} not found in Omie`);
     }
 
-    // Usar o método existente para criar/atualizar o produto
-    await Product.createFromOmie(productData);
+    // Criar/atualizar o produto com tenantId
+    await Product.createFromOmie(productData, tenantId);
     
-    const product = await Product.findOne({ codigo: productCode });
+    const product = await Product.findOne({ tenantId, codigo: productCode });
     
-    logger.debug(`Product ${productCode} synced successfully`);
+    logger.debug(`Product ${productCode} synced successfully`, { tenantId });
     return product;
 
   } catch (error) {

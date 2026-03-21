@@ -2,16 +2,20 @@
 import mongoose from 'mongoose';
 
 const WebhookEventSchema = new mongoose.Schema({
+  // Tenant ID para isolamento de dados
+  tenantId: { type: String, index: true },
+  userId: { type: String, index: true },
+  
   // Dados do evento recebido
-  eventType: { type: String, required: true, trim: true }, // ex: produto.alterado, pedido.incluido
-  eventId: { type: String, required: true, trim: true }, // ID único do evento na Omie
+  eventType: { type: String, required: true, trim: true },
+  eventId: { type: String, required: true, trim: true },
   
   // Dados completos do payload recebido
   payload: { type: mongoose.Schema.Types.Mixed, required: true },
   
   // Metadados do webhook
-  appId: { type: String, required: true, trim: true }, // ID do aplicativo Omie
-  timestamp: { type: Date, required: true }, // Timestamp do evento
+  appId: { type: String, required: true, trim: true },
+  timestamp: { type: Date, required: true },
   
   // Status de processamento
   status: { 
@@ -25,14 +29,14 @@ const WebhookEventSchema = new mongoose.Schema({
   error: { type: String },
   retryCount: { type: Number, default: 0 },
   
-  // Dados extraídos do payload (para consultas rápidas)
-  entityType: { type: String, trim: true }, // ex: product, order, invoice
-  entityId: { type: String, trim: true }, // ID da entidade afetada
-  entityData: { type: mongoose.Schema.Types.Mixed }, // Dados relevantes da entidade
+  // Dados extraídos do payload
+  entityType: { type: String, trim: true },
+  entityId: { type: String, trim: true },
+  entityData: { type: mongoose.Schema.Types.Mixed },
 }, { 
   timestamps: true,
-  // Adiciona índices para performance
   index: { 
+    tenantId: 1,
     eventType: 1, 
     status: 1, 
     createdAt: -1 

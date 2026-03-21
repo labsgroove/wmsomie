@@ -33,10 +33,15 @@ router.get('/locations/check/:code', protect, locationController.checkLocationAv
 router.get('/locations/nearby/:code', protect, locationController.getLocationsNearby);
 router.patch('/locations/:id/status', protect, locationController.updateLocationStatus);
 
-// Movimentos (protegidos)
+// Movimentos (protegidos) - filtrados por tenant
 router.get('/movements', protect, async (req, res) => {
   try {
-    const movements = await Movement.find()
+    const tenantId = req.user.tenantId;
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
+    
+    const movements = await Movement.find({ tenantId })
       .populate('product')
       .populate('fromLocation')
       .populate('toLocation')
@@ -49,8 +54,13 @@ router.get('/movements', protect, async (req, res) => {
 
 router.get('/movements/:type', protect, async (req, res) => {
   try {
+    const tenantId = req.user.tenantId;
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
+    
     const { type } = req.params;
-    const movements = await Movement.find({ type })
+    const movements = await Movement.find({ tenantId, type })
       .populate('product')
       .populate('fromLocation')
       .populate('toLocation')
@@ -61,10 +71,15 @@ router.get('/movements/:type', protect, async (req, res) => {
   }
 });
 
-// Orders (protegidos)
+// Orders (protegidos) - filtrados por tenant
 router.get('/orders', protect, async (req, res) => {
   try {
-    const orders = await Order.find()
+    const tenantId = req.user.tenantId;
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
+    
+    const orders = await Order.find({ tenantId })
       .populate('items.product')
       .sort({ createdAt: -1 });
     res.json(orders);
@@ -75,7 +90,12 @@ router.get('/orders', protect, async (req, res) => {
 
 router.get('/orders/:id', protect, async (req, res) => {
   try {
-    const order = await Order.findById(req.params.id)
+    const tenantId = req.user.tenantId;
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
+    
+    const order = await Order.findOne({ _id: req.params.id, tenantId })
       .populate('items.product');
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
@@ -88,7 +108,12 @@ router.get('/orders/:id', protect, async (req, res) => {
 
 router.delete('/orders/:id', protect, async (req, res) => {
   try {
-    const result = await Order.findByIdAndDelete(req.params.id);
+    const tenantId = req.user.tenantId;
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
+    
+    const result = await Order.findOneAndDelete({ _id: req.params.id, tenantId });
     if (!result) {
       return res.status(404).json({ error: 'Order not found' });
     }
@@ -100,23 +125,38 @@ router.delete('/orders/:id', protect, async (req, res) => {
 
 router.patch('/orders/:id', protect, async (req, res) => {
   try {
+    const tenantId = req.user.tenantId;
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
+    
     const { status } = req.body;
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
+    const order = await Order.findOneAndUpdate(
+      { _id: req.params.id, tenantId },
       { status },
       { new: true }
     ).populate('items.product');
+    
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    
     res.json(order);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Picking routes (protegidos)
+// Picking routes (protegidos) - filtrados por tenant
 router.get('/picking', protect, async (req, res) => {
   try {
+    const tenantId = req.user.tenantId;
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
+    
     const Picking = await import('../models/Picking.js');
-    const pickingList = await Picking.default.find()
+    const pickingList = await Picking.default.find({ tenantId })
       .populate('order')
       .populate('items.product')
       .populate('items.location')
@@ -142,10 +182,15 @@ router.get('/stock/reservation/:productSku', protect, pickingController.getReser
 
 router.patch('/picking/:id/status', protect, async (req, res) => {
   try {
+    const tenantId = req.user.tenantId;
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
+    
     const { status } = req.body;
     const Picking = await import('../models/Picking.js');
-    const picking = await Picking.default.findByIdAndUpdate(
-      req.params.id,
+    const picking = await Picking.default.findOneAndUpdate(
+      { _id: req.params.id, tenantId },
       { status },
       { new: true }
     ).populate('order').populate('items.product').populate('items.location');
@@ -160,41 +205,55 @@ router.patch('/picking/:id/status', protect, async (req, res) => {
   }
 });
 
-// Endpoint para estoque em recebimento (protegido)
+// Endpoint para estoque em recebimento (protegido) - com tenant
 router.get('/stock/receiving', protect, async (req, res) => {
   try {
-    const { getReceivingStock } = await import('../services/stockService.js');
-    const receivingStock = await getReceivingStock();
+    const tenantId = req.user.tenantId;
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
+    
+    const receivingStock = await Stock.getReceivingStock(tenantId);
     res.json(receivingStock);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Endpoint para adicionar estoque em recebimento (protegido)
+// Endpoint para adicionar estoque em recebimento (protegido) - com tenant
 router.post('/stock/receiving', protect, async (req, res) => {
   try {
+    const tenantId = req.user.tenantId;
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
+    
     const { addStockToReceiving } = await import('../services/stockService.js');
     const { sku, quantity, options } = req.body;
-    const stock = await addStockToReceiving(sku, quantity, options);
+    const stock = await addStockToReceiving(sku, quantity, options, tenantId);
     res.status(201).json(stock);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
 });
 
-// Stock (protegido)
+// Stock (protegido) - filtrado por tenant
 router.get('/stock', protect, async (req, res) => {
   try {
-    // Buscar estoque com o novo modelo
-    const stockRecords = await Stock.find()
+    const tenantId = req.user.tenantId;
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
+    
+    // Buscar estoque apenas do tenant
+    const stockRecords = await Stock.find({ tenantId })
       .sort({ createdAt: -1 });
     
-    // Para cada registro de estoque, buscar produto e localização
+    // Para cada registro de estoque, buscar produto e localização do tenant
     const stock = await Promise.all(
       stockRecords.map(async (record) => {
-        const product = await Product.findOne({ codigo: record.sku });
-        const location = await Location.findOne({ code: record.locationCode });
+        const product = await Product.findOne({ tenantId, codigo: record.sku });
+        const location = await Location.findOne({ tenantId, code: record.locationCode });
         
         return {
           _id: record._id,
@@ -231,28 +290,37 @@ router.get('/stock', protect, async (req, res) => {
 router.patch('/stock/:productId/location', protect, async (req, res) => {
   try {
     const { locationId } = req.body;
+    const tenantId = req.user.tenantId;
     
-    // Encontrar produto pelo ID
-    const product = await Product.findById(req.params.productId);
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
+    
+    // Encontrar produto pelo ID e tenant
+    const product = await Product.findOne({ _id: req.params.productId, tenantId });
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
     
-    // Encontrar ou criar localização
-    let location = await Location.findOne({ code: locationId });
+    // Encontrar ou criar localização com tenant
+    let location = await Location.findOne({ tenantId, code: locationId });
     if (!location) {
       location = await Location.create({
+        tenantId,
         code: locationId,
         description: `${locationId}`
       });
     }
 
-    // Atualizar estoque com o novo modelo
+    // Atualizar estoque com tenantId
     const stock = await Stock.findOneAndUpdate(
-      { sku: product.codigo, locationCode: locationId },
+      { tenantId, sku: product.codigo, locationCode: locationId },
       { 
+        tenantId,
+        sku: product.codigo,
+        locationCode: locationId,
         lastUpdated: new Date(),
-        quantity: 10, // Adicionar quantidade fixa de 10
+        quantity: 10,
         reservedQuantity: 0,
         availableQuantity: 10
       },
@@ -290,22 +358,27 @@ router.patch('/stock/:productId/location', protect, async (req, res) => {
   }
 });
 
-// Rota de transferência para a UI (aceita productId)
+// Rota de transferência para a UI (aceita productId) - com tenant
 router.post('/stock/transfer', protect, async (req, res) => {
   console.log('=== TRANSFER REQUEST RECEIVED ===');
   console.log('Request body:', req.body);
   
   try {
     const { productId, fromLocation, toLocation, quantity } = req.body;
+    const tenantId = req.user.tenantId;
     
-    console.log('Parsed parameters:', { productId, fromLocation, toLocation, quantity });
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
     
-    // Buscar produto para obter o SKU
-    const product = await Product.findById(productId);
+    console.log('Parsed parameters:', { productId, fromLocation, toLocation, quantity, tenantId });
+    
+    // Buscar produto para obter o SKU (filtrado por tenant)
+    const product = await Product.findOne({ _id: productId, tenantId });
     console.log('Found product:', product ? { id: product._id, sku: product.codigo } : null);
     
     if (!product) {
-      console.log('Product not found');
+      console.log('Product not found for tenant:', tenantId);
       return res.status(404).json({ error: 'Product not found' });
     }
     
@@ -317,6 +390,7 @@ router.post('/stock/transfer', protect, async (req, res) => {
     const StockModel = Stock.default;
     
     let fromStock = await StockModel.findOne({ 
+      tenantId,
       sku: product.codigo, 
       locationCode: fromLocation 
     });
@@ -327,8 +401,11 @@ router.post('/stock/transfer', protect, async (req, res) => {
     if (!fromStock || fromStock.availableQuantity < quantity) {
       console.log('Creating/updating stock in from location...');
       fromStock = await StockModel.findOneAndUpdate(
-        { sku: product.codigo, locationCode: fromLocation },
+        { tenantId, sku: product.codigo, locationCode: fromLocation },
         { 
+          tenantId,
+          sku: product.codigo,
+          locationCode: fromLocation,
           quantity: Math.max(quantity, fromStock?.quantity || 0),
           reservedQuantity: 0,
           availableQuantity: Math.max(quantity, fromStock?.availableQuantity || 0),
@@ -338,8 +415,8 @@ router.post('/stock/transfer', protect, async (req, res) => {
       );
     }
     
-    console.log('Calling transferStock with:', product.codigo, fromLocation, toLocation, quantity);
-    const result = await transferStock(product.codigo, fromLocation, toLocation, quantity);
+    console.log('Calling transferStock with:', product.codigo, fromLocation, toLocation, quantity, tenantId);
+    const result = await transferStock(product.codigo, fromLocation, toLocation, quantity, {}, tenantId);
     console.log('Transfer result:', result);
     
     res.json(result);
@@ -354,7 +431,7 @@ router.post('/stock/sync-with-omie', protect, async (req, res) => {
     // Importar o serviço de sincronização
     const { syncAllStockFromOmie } = await import('../services/omieStockService.js');
     
-    const result = await syncAllStockFromOmie();
+    const result = await syncAllStockFromOmie(req.user._id);
     res.json({
       success: true,
       syncedCount: result.syncedCount,

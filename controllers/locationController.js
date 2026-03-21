@@ -11,7 +11,12 @@ import {
 
 export async function createLocationController(req, res) {
   try {
-    const location = await createLocation(req.body);
+    const tenantId = req.user.tenantId;
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
+    
+    const location = await createLocation({ ...req.body, tenantId });
     res.status(201).json(location);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -22,14 +27,19 @@ export async function createLocationController(req, res) {
 export async function getLocations(req, res) {
   try {
     const { zone, search, sortBy = 'code' } = req.query;
+    const tenantId = req.user.tenantId;
+    
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
     
     let locations;
     if (search) {
-      locations = await searchLocations(search);
+      locations = await searchLocations(search, tenantId);
     } else if (zone) {
-      locations = await getLocationsByZone(zone);
+      locations = await getLocationsByZone(zone, tenantId);
     } else {
-      locations = await Location.find({ isActive: true }).sort({ code: 1 });
+      locations = await Location.find({ tenantId, isActive: true }).sort({ code: 1 });
     }
     
     res.json(locations);
@@ -41,7 +51,13 @@ export async function getLocations(req, res) {
 export async function getLocationByCode(req, res) {
   try {
     const { code } = req.params;
-    const location = await Location.findOne({ code, isActive: true });
+    const tenantId = req.user.tenantId;
+    
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
+    
+    const location = await Location.findOne({ tenantId, code, isActive: true });
     
     if (!location) {
       return res.status(404).json({ error: 'Location not found' });
@@ -57,7 +73,13 @@ export async function getLocationByCode(req, res) {
 export async function checkLocationAvailability(req, res) {
   try {
     const { code } = req.params;
-    const available = await isLocationAvailable(code);
+    const tenantId = req.user.tenantId;
+    
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
+    
+    const available = await isLocationAvailable(code, tenantId);
     res.json({ available, code });
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -68,7 +90,13 @@ export async function updateLocationStatus(req, res) {
   try {
     const { id } = req.params;
     const { isActive } = req.body;
-    const location = await toggleLocationStatus(id, isActive);
+    const tenantId = req.user.tenantId;
+    
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
+    
+    const location = await toggleLocationStatus(id, isActive, tenantId);
     res.json(location);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -79,7 +107,13 @@ export async function getLocationsNearby(req, res) {
   try {
     const { code } = req.params;
     const { radius = 5 } = req.query;
-    const locations = await getNearbyLocations(code, parseInt(radius));
+    const tenantId = req.user.tenantId;
+    
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
+    
+    const locations = await getNearbyLocations(code, parseInt(radius), tenantId);
     res.json(locations);
   } catch (error) {
     res.status(400).json({ error: error.message });

@@ -11,10 +11,12 @@ const axiosInstance = axios.create({
   }
 });
 
-export async function getUserOmieCredentials() {
-  const user = await User.findOne({ 
-    'omieConfig.isConfigured': true 
-  }).select('omieConfig');
+export async function getUserOmieCredentials(userId) {
+  if (!userId) {
+    throw new Error('User ID is required to fetch Omie credentials');
+  }
+  
+  const user = await User.findById(userId).select('omieConfig');
   
   if (!user || !user.omieConfig?.appKey || !user.omieConfig?.appSecret) {
     return null;
@@ -26,15 +28,15 @@ export async function getUserOmieCredentials() {
   };
 }
 
-export async function callOmie(endpoint, call, param = {}, credentials = null) {
-  let creds = credentials;
+export async function callOmie(endpoint, call, param = {}, userId = null) {
+  let creds = null;
   
-  if (!creds) {
-    creds = await getUserOmieCredentials();
+  if (userId) {
+    creds = await getUserOmieCredentials(userId);
   }
   
   if (!creds || !creds.appKey || !creds.appSecret) {
-    throw new Error('Omie credentials not configured. Please configure your Omie API key and secret in Settings.');
+    throw new Error('Omie credentials not configured for this user. Please configure your Omie API key and secret in Settings.');
   }
 
   const payload = {
@@ -73,14 +75,5 @@ export async function callOmie(endpoint, call, param = {}, credentials = null) {
 }
 
 export async function callOmieWithUser(userId, endpoint, call, param = {}) {
-  const user = await User.findById(userId).select('omieConfig');
-  
-  if (!user || !user.omieConfig?.appKey || !user.omieConfig?.appSecret) {
-    throw new Error('User Omie credentials not configured');
-  }
-  
-  return callOmie(endpoint, call, param, {
-    appKey: user.omieConfig.appKey,
-    appSecret: user.omieConfig.appSecret
-  });
+  return callOmie(endpoint, call, param, userId);
 }

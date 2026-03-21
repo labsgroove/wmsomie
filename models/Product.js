@@ -2,9 +2,12 @@
 import mongoose from 'mongoose';
 
 const ProductSchema = new mongoose.Schema({
+  // Tenant ID para isolamento de dados
+  tenantId: { type: String, required: true, index: true },
+  
   // Dados básicos do Omie
-  omieId: { type: String, required: true, unique: true, trim: true },
-  codigo: { type: String, required: true, unique: true, trim: true }, // SKU do Omie
+  omieId: { type: String, required: true, trim: true },
+  codigo: { type: String, required: true, trim: true }, // SKU do Omie
   descricao: { type: String, required: true, trim: true }, // Nome do produto
   
   // Dados de estoque do Omie
@@ -25,8 +28,10 @@ const ProductSchema = new mongoose.Schema({
   profundidade: Number,
 }, { timestamps: true });
 
-// Índices adicionais (unique já definido no schema)
-ProductSchema.index({ isActive: 1 });
+// Índices compostos
+ProductSchema.index({ tenantId: 1, omieId: 1 }, { unique: true });
+ProductSchema.index({ tenantId: 1, codigo: 1 }, { unique: true });
+ProductSchema.index({ tenantId: 1, isActive: 1 });
 
 // Middleware para validar e limpar dados antes de salvar
 ProductSchema.pre('save', function(next) {
@@ -72,34 +77,45 @@ ProductSchema.pre('findOneAndUpdate', function(next) {
   next();
 });
 
-// Método estático para buscar por SKU
-ProductSchema.statics.findBySku = function(sku) {
+// Método estático para buscar por SKU (com tenant)
+ProductSchema.statics.findBySku = function(sku, tenantId) {
   if (!sku || sku.trim() === '') {
     return null;
   }
-  return this.findOne({ codigo: sku.trim(), isActive: true });
+  const query = { codigo: sku.trim(), isActive: true };
+  if (tenantId) query.tenantId = tenantId;
+  return this.findOne(query);
 };
 
-// Método estático para buscar por Omie ID
-ProductSchema.statics.findByOmieId = function(omieId) {
+// Método estático para buscar por Omie ID (com tenant)
+ProductSchema.statics.findByOmieId = function(omieId, tenantId) {
   if (!omieId || omieId.trim() === '') {
     return null;
   }
-  return this.findOne({ omieId: omieId.trim(), isActive: true });
+  const query = { omieId: omieId.trim(), isActive: true };
+  if (tenantId) query.tenantId = tenantId;
+  return this.findOne(query);
 };
 
-// Método estático para criar ou atualizar produto com validação
-ProductSchema.statics.createFromOmie = function(omieData) {
+// Método estático para criar ou atualizar produto com validação (com tenant)
+ProductSchema.statics.createFromOmie = function(omieData, tenantId) {
   if (!omieData || !omieData.codigo_produto) {
     throw new Error('Dados do Omie inválidos: codigo_produto é obrigatório');
+  }
+  
+  if (!tenantId) {
+    throw new Error('tenantId é obrigatório para criar/atualizar produto');
   }
   
   const codigo = omieData.codigo || omieData.codigo_produto;
   const descricao = omieData.descricao || `Produto ${codigo}`;
   
   return this.findOneAndUpdate(
-    { omieId: omieData.codigo_produto },
+    { tenantId, omieId: omieData.codigo_produto },
     {
+      // Tenant ID
+      tenantId,
+      
       // Dados básicos do Omie
       omieId: omieData.codigo_produto,
       codigo: codigo.trim(),

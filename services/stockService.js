@@ -5,24 +5,29 @@ import Location from '../models/Location.js';
 import logger from '../utils/syncLogger.js';
 import mongoose from 'mongoose';
 
-export async function addStockToReceiving(sku, quantity, options = {}) {
-  logger.debug(`Adding stock to receiving: SKU ${sku}, Quantity ${quantity}`);
+export async function addStockToReceiving(sku, quantity, options = {}, tenantId) {
+  if (!tenantId) throw new Error('tenantId is required');
+  logger.debug(`Adding stock to receiving: SKU ${sku}, Quantity ${quantity}`, { tenantId });
   
   try {
-    // Validar produto
-    const product = await Product.findBySku(sku);
+    // Validar produto com tenant
+    const product = await Product.findBySku(sku, tenantId);
     if (!product) {
-      throw new Error(`Product with SKU ${sku} not found`);
+      throw new Error(`Product with SKU ${sku} not found for tenant ${tenantId}`);
     }
     
-    // Criar ou atualizar registro de estoque em RECEBIMENTO
+    // Criar ou atualizar registro de estoque em RECEBIMENTO com tenantId
     const stock = await Stock.findOneAndUpdate(
       { 
+        tenantId,
         sku: sku, 
         locationCode: 'RECEBIMENTO',
         batchNumber: options.batchNumber || null
       },
       { 
+        tenantId,
+        sku: sku,
+        locationCode: 'RECEBIMENTO',
         $inc: { quantity: quantity },
         lastUpdated: new Date(),
         lastMovementDate: new Date(),
@@ -32,7 +37,7 @@ export async function addStockToReceiving(sku, quantity, options = {}) {
       { upsert: true, new: true }
     );
     
-    logger.info(`Stock added to receiving successfully`, { sku, quantity, totalStock: stock.quantity });
+    logger.info(`Stock added to receiving successfully`, { sku, quantity, totalStock: stock.quantity, tenantId });
     return stock;
     
   } catch (error) {
@@ -41,36 +46,42 @@ export async function addStockToReceiving(sku, quantity, options = {}) {
   }
 }
 
-export async function addStockToLocation(sku, locationCode, quantity, options = {}) {
-  logger.debug(`Adding stock: SKU ${sku}, Location ${locationCode}, Quantity ${quantity}`);
+export async function addStockToLocation(sku, locationCode, quantity, options = {}, tenantId) {
+  if (!tenantId) throw new Error('tenantId is required');
+  logger.debug(`Adding stock: SKU ${sku}, Location ${locationCode}, Quantity ${quantity}`, { tenantId });
   
   try {
-    // Validar produto
-    const product = await Product.findBySku(sku);
+    // Validar produto com tenant
+    const product = await Product.findBySku(sku, tenantId);
     if (!product) {
-      throw new Error(`Product with SKU ${sku} not found`);
+      throw new Error(`Product with SKU ${sku} not found for tenant ${tenantId}`);
     }
     
-    // Validar ou criar localização automaticamente
-    let location = await Location.findOne({ code: locationCode, isActive: true });
+    // Validar ou criar localização automaticamente com tenant
+    let location = await Location.findOne({ tenantId, code: locationCode, isActive: true });
     if (!location) {
       location = await Location.create({
+        tenantId,
         code: locationCode,
         description: `Localização ${locationCode}`,
         type: 'storage',
         zone: 'Armazém'
       });
-      logger.info(`Created location: ${locationCode}`);
+      logger.info(`Created location: ${locationCode}`, { tenantId });
     }
     
-    // Criar ou atualizar registro de estoque
+    // Criar ou atualizar registro de estoque com tenantId
     const stock = await Stock.findOneAndUpdate(
       { 
+        tenantId,
         sku: sku, 
         locationCode: locationCode,
         batchNumber: options.batchNumber || null
       },
       { 
+        tenantId,
+        sku: sku,
+        locationCode: locationCode,
         $inc: { quantity: quantity },
         lastUpdated: new Date(),
         lastMovementDate: new Date(),
@@ -83,7 +94,7 @@ export async function addStockToLocation(sku, locationCode, quantity, options = 
     // Atualizar localização
     await location.updateSku(sku, stock.quantity, stock.reservedQuantity);
     
-    logger.info(`Stock added successfully`, { sku, locationCode, quantity, totalStock: stock.quantity });
+    logger.info(`Stock added successfully`, { sku, locationCode, quantity, totalStock: stock.quantity, tenantId });
     return stock;
     
   } catch (error) {
@@ -92,12 +103,14 @@ export async function addStockToLocation(sku, locationCode, quantity, options = 
   }
 }
 
-export async function removeStockFromLocation(sku, locationCode, quantity, options = {}) {
-  logger.debug(`Removing stock: SKU ${sku}, Location ${locationCode}, Quantity ${quantity}`);
+export async function removeStockFromLocation(sku, locationCode, quantity, options = {}, tenantId) {
+  if (!tenantId) throw new Error('tenantId is required');
+  logger.debug(`Removing stock: SKU ${sku}, Location ${locationCode}, Quantity ${quantity}`, { tenantId });
   
   try {
-    // Buscar estoque atual
+    // Buscar estoque atual com tenant
     const stock = await Stock.findOne({ 
+      tenantId,
       sku: sku, 
       locationCode: locationCode,
       batchNumber: options.batchNumber || null
@@ -118,7 +131,7 @@ export async function removeStockFromLocation(sku, locationCode, quantity, optio
     await stock.save();
     
     // Atualizar localização
-    const location = await Location.findOne({ code: locationCode });
+    const location = await Location.findOne({ tenantId, code: locationCode });
     if (location) {
       if (stock.quantity === 0) {
         await location.removeSku(sku);
@@ -127,7 +140,7 @@ export async function removeStockFromLocation(sku, locationCode, quantity, optio
       }
     }
     
-    logger.info(`Stock removed successfully`, { sku, locationCode, quantity, remainingStock: stock.quantity });
+    logger.info(`Stock removed successfully`, { sku, locationCode, quantity, remainingStock: stock.quantity, tenantId });
     return stock;
     
   } catch (error) {
@@ -136,40 +149,44 @@ export async function removeStockFromLocation(sku, locationCode, quantity, optio
   }
 }
 
-export async function transferStock(sku, fromLocationCode, toLocationCode, quantity, options = {}) {
-  logger.debug(`Transferring stock: SKU ${sku}, From ${fromLocationCode}, To ${toLocationCode}, Quantity ${quantity}`);
+export async function transferStock(sku, fromLocationCode, toLocationCode, quantity, options = {}, tenantId) {
+  if (!tenantId) throw new Error('tenantId is required');
+  logger.debug(`Transferring stock: SKU ${sku}, From ${fromLocationCode}, To ${toLocationCode}, Quantity ${quantity}`, { tenantId });
   
   try {
-    // Validar ou criar localizações automaticamente
+    // Validar ou criar localizações automaticamente com tenant
     let [fromLocation, toLocation] = await Promise.all([
-      Location.findOne({ code: fromLocationCode, isActive: true }),
-      Location.findOne({ code: toLocationCode, isActive: true })
+      Location.findOne({ tenantId, code: fromLocationCode, isActive: true }),
+      Location.findOne({ tenantId, code: toLocationCode, isActive: true })
     ]);
     
     // Criar localização de origem se não existir
     if (!fromLocation) {
       fromLocation = await Location.create({
+        tenantId,
         code: fromLocationCode,
         description: `Localização ${fromLocationCode}`,
         type: 'storage',
         zone: 'Armazém'
       });
-      logger.info(`Created source location: ${fromLocationCode}`);
+      logger.info(`Created source location: ${fromLocationCode}`, { tenantId });
     }
     
     // Criar localização de destino se não existir
     if (!toLocation) {
       toLocation = await Location.create({
+        tenantId,
         code: toLocationCode,
         description: `Localização ${toLocationCode}`,
         type: 'storage', 
         zone: 'Armazém'
       });
-      logger.info(`Created target location: ${toLocationCode}`);
+      logger.info(`Created target location: ${toLocationCode}`, { tenantId });
     }
     
-    // Buscar estoque de origem
+    // Buscar estoque de origem com tenant
     const fromStock = await Stock.findOne({ 
+      tenantId,
       sku: sku, 
       locationCode: fromLocationCode,
       batchNumber: options.batchNumber || null
@@ -403,23 +420,24 @@ export async function getStockSummary(filters = {}) {
   }
 }
 
-export async function adjustStock(productId, locationId, qtyChange, options = {}) {
+export async function adjustStock(productId, locationId, qtyChange, options = {}, tenantId) {
+  if (!tenantId) throw new Error('tenantId is required');
   const session = await mongoose.startSession();
   session.startTransaction();
   
   try {
     // Buscar produto e localização para obter SKU e código
-    const product = await Product.findById(productId);
-    const location = await Location.findById(locationId);
+    const product = await Product.findOne({ _id: productId, tenantId });
+    const location = await Location.findOne({ _id: locationId, tenantId });
     
     if (!product || !location) {
-      throw new Error('Product or Location not found');
+      throw new Error('Product or Location not found for tenant');
     }
     
     if (qtyChange > 0) {
-      return await addStockToLocation(product.codigo, location.code, qtyChange, options);
+      return await addStockToLocation(product.codigo, location.code, qtyChange, options, tenantId);
     } else {
-      return await removeStockFromLocation(product.codigo, location.code, Math.abs(qtyChange), options);
+      return await removeStockFromLocation(product.codigo, location.code, Math.abs(qtyChange), options, tenantId);
     }
     
     await session.commitTransaction();

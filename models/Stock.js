@@ -2,6 +2,7 @@
 import mongoose from 'mongoose';
 
 const StockSchema = new mongoose.Schema({
+  tenantId: { type: String, required: true, index: true },
   // Referências por SKU em vez de ObjectId
   sku: { type: String, required: true, ref: 'Product' },
   locationCode: { type: String, required: true, ref: 'Location' },
@@ -37,10 +38,10 @@ const StockSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Índices compostos para permitir múltiplos registros
-StockSchema.index({ sku: 1, locationCode: 1, batchNumber: 1 }, { unique: true });
-StockSchema.index({ sku: 1 });
-StockSchema.index({ locationCode: 1 });
-StockSchema.index({ qualityStatus: 1 });
+StockSchema.index({ tenantId: 1, sku: 1, locationCode: 1, batchNumber: 1 }, { unique: true });
+StockSchema.index({ tenantId: 1, sku: 1 });
+StockSchema.index({ tenantId: 1, locationCode: 1 });
+StockSchema.index({ tenantId: 1, qualityStatus: 1 });
 StockSchema.index({ expiryDate: 1 });
 StockSchema.index({ lastUpdated: 1 });
 
@@ -57,28 +58,36 @@ StockSchema.pre('save', function(next) {
 });
 
 // Método estático para buscar todo estoque de um SKU
-StockSchema.statics.findBySku = function(sku) {
-  return this.find({ sku: sku }).sort({ lastUpdated: -1 });
+StockSchema.statics.findBySku = function(sku, tenantId) {
+  const query = { sku: sku };
+  if (tenantId) query.tenantId = tenantId;
+  return this.find(query).sort({ lastUpdated: -1 });
 };
 
 // Método estático para buscar estoque disponível de um SKU
-StockSchema.statics.findAvailableBySku = function(sku) {
-  return this.find({ 
+StockSchema.statics.findAvailableBySku = function(sku, tenantId) {
+  const query = { 
     sku: sku, 
     availableQuantity: { $gt: 0 },
     qualityStatus: 'GOOD'
-  }).sort({ lastUpdated: -1 });
+  };
+  if (tenantId) query.tenantId = tenantId;
+  return this.find(query).sort({ lastUpdated: -1 });
 };
 
 // Método estático para buscar estoque em uma localização
-StockSchema.statics.findByLocation = function(locationCode) {
-  return this.find({ locationCode: locationCode }).sort({ sku: 1 });
+StockSchema.statics.findByLocation = function(locationCode, tenantId) {
+  const query = { locationCode: locationCode };
+  if (tenantId) query.tenantId = tenantId;
+  return this.find(query).sort({ sku: 1 });
 };
 
 // Método estático para buscar produtos em recebimento (sem localização definida)
-StockSchema.statics.getReceivingStock = async function() {
+StockSchema.statics.getReceivingStock = async function(tenantId) {
+  const matchStage = { locationCode: 'RECEBIMENTO', qualityStatus: 'GOOD' };
+  if (tenantId) matchStage.tenantId = tenantId;
   return this.aggregate([
-    { $match: { locationCode: 'RECEBIMENTO', qualityStatus: 'GOOD' } },
+    { $match: matchStage },
     {
       $group: {
         _id: '$sku',
@@ -105,9 +114,11 @@ StockSchema.statics.getReceivingStock = async function() {
 };
 
 // Método estático para buscar total de estoque por SKU (incluindo recebimento)
-StockSchema.statics.getTotalBySku = async function(sku) {
+StockSchema.statics.getTotalBySku = async function(sku, tenantId) {
+  const matchStage = { sku: sku, qualityStatus: 'GOOD' };
+  if (tenantId) matchStage.tenantId = tenantId;
   const result = await this.aggregate([
-    { $match: { sku: sku, qualityStatus: 'GOOD' } },
+    { $match: matchStage },
     { 
       $group: {
         _id: '$sku',
@@ -135,9 +146,11 @@ StockSchema.statics.getTotalBySku = async function(sku) {
 };
 
 // Método estático para buscar ocupação por localização
-StockSchema.statics.getOccupancyByLocation = async function(locationCode) {
+StockSchema.statics.getOccupancyByLocation = async function(locationCode, tenantId) {
+  const matchStage = { locationCode: locationCode, qualityStatus: 'GOOD' };
+  if (tenantId) matchStage.tenantId = tenantId;
   const result = await this.aggregate([
-    { $match: { locationCode: locationCode, qualityStatus: 'GOOD' } },
+    { $match: matchStage },
     { 
       $group: {
         _id: '$locationCode',

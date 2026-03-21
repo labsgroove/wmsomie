@@ -8,19 +8,24 @@ import { isValidLocationCode, parseLocationCode } from '../utils/locationGenerat
  * @returns {Promise<Location>} Localização criada
  */
 export async function createLocation(locationData) {
-  const { code, description, zone } = locationData;
+  const { code, description, zone, tenantId } = locationData;
+  
+  if (!tenantId) {
+    throw new Error('Tenant ID é obrigatório');
+  }
   
   if (!code || !isValidLocationCode(code)) {
     throw new Error('Código da localização é obrigatório e deve ser válido');
   }
   
-  // Verificar se o código já existe
-  const existingLocation = await Location.findOne({ code });
+  // Verificar se o código já existe para este tenant
+  const existingLocation = await Location.findOne({ tenantId, code });
   if (existingLocation) {
-    throw new Error('Código de localização já existe');
+    throw new Error('Código de localização já existe para este tenant');
   }
   
   return await Location.create({
+    tenantId,
     code: code.trim(),
     description,
     zone
@@ -33,13 +38,18 @@ export async function createLocation(locationData) {
  * @param {string} searchTerm - Termo de busca
  * @returns {Promise<Location[]>} Localizações encontradas
  */
-export async function searchLocations(searchTerm) {
+export async function searchLocations(searchTerm, tenantId) {
+  if (!tenantId) {
+    throw new Error('Tenant ID é obrigatório');
+  }
+  
   if (!searchTerm) {
-    return await Location.find({ isActive: true }).sort({ code: 1 });
+    return await Location.find({ tenantId, isActive: true }).sort({ code: 1 });
   }
   
   const regex = new RegExp(searchTerm, 'i');
   return await Location.find({
+    tenantId,
     $or: [
       { code: regex },
       { description: regex },
@@ -54,8 +64,11 @@ export async function searchLocations(searchTerm) {
  * @param {string} zone - Nome da zona
  * @returns {Promise<Location[]>} Localizações da zona
  */
-export async function getLocationsByZone(zone) {
-  return await Location.find({ zone, isActive: true }).sort({ code: 1 });
+export async function getLocationsByZone(zone, tenantId) {
+  if (!tenantId) {
+    throw new Error('Tenant ID é obrigatório');
+  }
+  return await Location.find({ tenantId, zone, isActive: true }).sort({ code: 1 });
 }
 
 
@@ -64,12 +77,17 @@ export async function getLocationsByZone(zone) {
  * @param {string} locationCode - Código da localização
  * @returns {Promise<boolean>} True se existir e estiver ativa
  */
-export async function isLocationAvailable(locationCode) {
+export async function isLocationAvailable(locationCode, tenantId) {
+  if (!tenantId) {
+    throw new Error('Tenant ID é obrigatório');
+  }
+  
   if (!isValidLocationCode(locationCode)) {
     return false;
   }
   
   const location = await Location.findOne({ 
+    tenantId,
     code: locationCode, 
     isActive: true 
   });
@@ -83,9 +101,13 @@ export async function isLocationAvailable(locationCode) {
  * @param {boolean} isActive - Status ativo
  * @returns {Promise<Location>} Localização atualizada
  */
-export async function toggleLocationStatus(locationId, isActive) {
-  return await Location.findByIdAndUpdate(
-    locationId,
+export async function toggleLocationStatus(locationId, isActive, tenantId) {
+  if (!tenantId) {
+    throw new Error('Tenant ID é obrigatório');
+  }
+  
+  return await Location.findOneAndUpdate(
+    { _id: locationId, tenantId },
     { isActive },
     { new: true }
   );
@@ -97,12 +119,16 @@ export async function toggleLocationStatus(locationId, isActive) {
  * @param {number} radius - Raio de busca (quantidade de posições)
  * @returns {Promise<Location[]>} Localizações próximas
  */
-export async function getNearbyLocations(locationCode, radius = 5) {
+export async function getNearbyLocations(locationCode, radius = 5, tenantId) {
+  if (!tenantId) {
+    throw new Error('Tenant ID é obrigatório');
+  }
+  
   if (!isValidLocationCode(locationCode)) {
     return [];
   }
   
-  const locations = await Location.find({ isActive: true }).sort({ code: 1 });
+  const locations = await Location.find({ tenantId, isActive: true }).sort({ code: 1 });
   const currentIndex = locations.findIndex(loc => loc.code === locationCode);
   
   if (currentIndex === -1) {

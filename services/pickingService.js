@@ -5,12 +5,17 @@ import Stock from '../models/Stock.js';
 import Location from '../models/Location.js';
 import { sortLocations } from '../utils/locationSorter.js';
 
-export async function generatePicking(orderId) {
-  const order = await Order.findById(orderId);
-  if (!order) throw new Error('Order not found');
+export async function generatePicking(orderId, tenantId) {
+  if (!tenantId) {
+    throw new Error('Tenant ID is required');
+  }
+  
+  // Buscar pedido filtrado por tenant
+  const order = await Order.findOne({ _id: orderId, tenantId });
+  if (!order) throw new Error('Order not found for this tenant');
 
   // Popular os produtos manualmente
-  const populatedOrder = await Order.findById(orderId).populate('items.product');
+  const populatedOrder = await Order.findOne({ _id: orderId, tenantId }).populate('items.product');
 
   const pickingItems = [];
 
@@ -20,9 +25,10 @@ export async function generatePicking(orderId) {
     // Tentar encontrar estoque por SKU primeiro, depois por código do produto
     let stocks = [];
     
-    // Se o item tiver SKU, usar SKU
+    // Se o item tiver SKU, usar SKU (filtrado por tenant)
     if (item.sku) {
       stocks = await Stock.find({
+        tenantId,
         sku: item.sku,
         quantity: { $gt: 0 },
       });
@@ -31,6 +37,7 @@ export async function generatePicking(orderId) {
     // Se não encontrar por SKU, tentar pelo código do produto
     if (stocks.length === 0 && item.product.codigo) {
       stocks = await Stock.find({
+        tenantId,
         sku: item.product.codigo,
         quantity: { $gt: 0 },
       });
@@ -39,6 +46,7 @@ export async function generatePicking(orderId) {
     // Se ainda não encontrar, tentar pelo _id do produto
     if (stocks.length === 0) {
       stocks = await Stock.find({
+        tenantId,
         product: item.product._id,
         quantity: { $gt: 0 },
       });
@@ -51,8 +59,8 @@ export async function generatePicking(orderId) {
 
       const take = Math.min(s.quantity, remaining);
       
-      // Buscar a localização pelo código
-      const location = await Location.findOne({ code: s.locationCode || 'RECEBIMENTO' });
+      // Buscar a localização pelo código (filtrado por tenant)
+      const location = await Location.findOne({ tenantId, code: s.locationCode || 'RECEBIMENTO' });
 
       pickingItems.push({
         product: item.product._id,
@@ -69,7 +77,9 @@ export async function generatePicking(orderId) {
     }
   }
 
+  // Criar picking com tenantId
   const picking = await Picking.create({
+    tenantId,
     order: order._id,
     items: pickingItems,
   });

@@ -1,13 +1,26 @@
 // src/services/omieOrderService.js
 import Order from '../models/Order.js';
 import Product from '../models/Product.js';
+import User from '../models/User.js';
 import { callOmie } from './omieClient.js';
 
-export async function syncOrders() {
+export async function syncOrders(userId) {
+  if (!userId) {
+    throw new Error('User ID is required to sync orders');
+  }
+  
+  // Buscar tenantId do usuário
+  const user = await User.findById(userId).select('tenantId');
+  if (!user || !user.tenantId) {
+    throw new Error('User not found or tenantId not configured');
+  }
+  const tenantId = user.tenantId;
+  
   const response = await callOmie(
     'produtos/pedido/',
     'ListarPedidos',
-    { pagina: 1, registros_por_pagina: 50 }
+    { pagina: 1, registros_por_pagina: 50 },
+    userId
   );
 
   const pedidos = response.pedido_venda_produto || [];
@@ -23,9 +36,13 @@ export async function syncOrders() {
     }
 
     for (const i of p.det || []) {
-      const product = await Product.findOne({ omieId: i.produto.codigo_produto });
+      // Buscar produto filtrando por tenantId
+      const product = await Product.findOne({ 
+        tenantId,
+        omieId: i.produto.codigo_produto 
+      });
       if (!product) {
-        console.log(`Produto ${i.produto.codigo_produto} não encontrado no banco, ignorando item...`);
+        console.log(`Produto ${i.produto.codigo_produto} não encontrado no banco para tenant ${tenantId}, ignorando item...`);
         continue;
       }
 
@@ -38,29 +55,42 @@ export async function syncOrders() {
     // Apenas sincronizar se tiver itens válidos
     if (items.length > 0) {
       await Order.findOneAndUpdate(
-        { omieId: p.cabecalho.codigo_pedido },
+        { tenantId, omieId: p.cabecalho.codigo_pedido },
         {
+          tenantId,
           omieId: p.cabecalho.codigo_pedido,
           items,
         },
         { upsert: true }
       );
       syncedCount++;
-      console.log(`Pedido ${p.cabecalho.codigo_pedido} sincronizado com ${items.length} itens`);
+      console.log(`Pedido ${p.cabecalho.codigo_pedido} sincronizado com ${items.length} itens (tenant: ${tenantId})`);
     }
   }
 
   return syncedCount;
 }
 
-export async function syncOrderFromOmie(orderCode) {
+export async function syncOrderFromOmie(orderCode, userId) {
+  if (!userId) {
+    throw new Error('User ID is required to sync order from Omie');
+  }
+  
   try {
-    console.log(`Syncing order ${orderCode} from Omie`);
+    // Buscar tenantId do usuário
+    const user = await User.findById(userId).select('tenantId');
+    if (!user || !user.tenantId) {
+      throw new Error('User not found or tenantId not configured');
+    }
+    const tenantId = user.tenantId;
+    
+    console.log(`Syncing order ${orderCode} from Omie (tenant: ${tenantId})`);
     
     const response = await callOmie(
       'produtos/pedido/',
       'ConsultarPedido',
-      { codigo_pedido: orderCode }
+      { codigo_pedido: orderCode },
+      userId
     );
 
     const pedido = response.pedido_venda_produto;
@@ -75,12 +105,14 @@ export async function syncOrderFromOmie(orderCode) {
       console.log(`Order ${orderCode} has no items, creating empty order`);
     } else {
       for (const item of pedido.det || []) {
+        // Buscar produto filtrando por tenantId
         const product = await Product.findOne({ 
+          tenantId,
           codigo: item.produto.codigo_produto 
         });
         
         if (!product) {
-          console.log(`Product ${item.produto.codigo_produto} not found, skipping item...`);
+          console.log(`Product ${item.produto.codigo_produto} not found for tenant ${tenantId}, skipping item...`);
           continue;
         }
 
@@ -93,8 +125,9 @@ export async function syncOrderFromOmie(orderCode) {
       }
     }
 
-    // Criar ou atualizar o pedido
+    // Criar ou atualizar o pedido com tenantId
     const orderData = {
+      tenantId,
       omieId: orderCode,
       items,
       status: pedido.cabecalho?.status || 'open',
@@ -105,12 +138,12 @@ export async function syncOrderFromOmie(orderCode) {
     };
 
     const order = await Order.findOneAndUpdate(
-      { omieId: orderCode },
+      { tenantId, omieId: orderCode },
       orderData,
       { upsert: true, new: true }
     ).populate('items.product');
 
-    console.log(`Order ${orderCode} synced successfully with ${items.length} items`);
+    console.log(`Order ${orderCode} synced successfully with ${items.length} items (tenant: ${tenantId})`);
     return order;
 
   } catch (error) {

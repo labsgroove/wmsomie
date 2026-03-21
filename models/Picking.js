@@ -8,6 +8,7 @@ const PickingItemSchema = new mongoose.Schema({
 });
 
 const PickingSchema = new mongoose.Schema({
+  tenantId: { type: String, required: true, index: true },
   order: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' },
   status: {
     type: String,
@@ -16,5 +17,9 @@ const PickingSchema = new mongoose.Schema({
   },
   items: [PickingItemSchema],
 }, { timestamps: true });
+
+// Índices compostos
+PickingSchema.index({ tenantId: 1, order: 1 });
+PickingSchema.index({ tenantId: 1, status: 1 });
 
 export default mongoose.model('Picking', PickingSchema);

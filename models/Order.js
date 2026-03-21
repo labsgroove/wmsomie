@@ -7,7 +7,8 @@ const OrderItemSchema = new mongoose.Schema({
 });
 
 const OrderSchema = new mongoose.Schema({
-  omieId: { type: String, unique: true },
+  tenantId: { type: String, required: true, index: true },
+  omieId: { type: String, required: true },
   status: {
     type: String,
     enum: ['PENDING', 'PICKING', 'DONE'],
@@ -15,5 +16,9 @@ const OrderSchema = new mongoose.Schema({
   },
   items: [OrderItemSchema],
 }, { timestamps: true });
+
+// Índices compostos
+OrderSchema.index({ tenantId: 1, omieId: 1 }, { unique: true });
+OrderSchema.index({ tenantId: 1, status: 1 });
 
 export default mongoose.model('Order', OrderSchema);

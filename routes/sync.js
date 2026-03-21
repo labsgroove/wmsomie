@@ -20,7 +20,7 @@ const router = express.Router();
 // Stock sync routes
 router.post('/stock/from-omie', async (req, res) => {
   try {
-    const result = await syncAllStockFromOmie();
+    const result = await syncAllStockFromOmie(req.user._id);
     res.json({
       success: true,
       syncedCount: result.syncedCount,
@@ -37,7 +37,7 @@ router.post('/stock/from-omie', async (req, res) => {
 
 router.post('/stock/to-omie', async (req, res) => {
   try {
-    const count = await sendStockToOmie();
+    const count = await sendStockToOmie(req.user._id);
     res.json({
       success: true,
       syncedCount: count,
@@ -54,7 +54,7 @@ router.post('/stock/to-omie', async (req, res) => {
 router.get('/stock/:productId', async (req, res) => {
   try {
     const { productId } = req.params;
-    const stock = await getStockFromOmie(productId);
+    const stock = await getStockFromOmie(productId, req.user._id);
     res.json({
       success: true,
       data: stock
@@ -70,7 +70,7 @@ router.get('/stock/:productId', async (req, res) => {
 router.post('/stock/adjust', async (req, res) => {
   try {
     const { productId, quantity, reason } = req.body;
-    const result = await adjustStockInOmie(productId, quantity, reason);
+    const result = await adjustStockInOmie(productId, quantity, reason, req.user._id);
     res.json({
       success: true,
       data: result,
@@ -96,7 +96,7 @@ router.post('/movements/from-omie', async (req, res) => {
       });
     }
 
-    const result = await syncMovementsFromOmie(startDate, endDate);
+    const result = await syncMovementsFromOmie(startDate, endDate, req.user._id);
     res.json({
       success: true,
       syncedCount: result.syncedCount,
@@ -114,7 +114,20 @@ router.post('/movements/from-omie', async (req, res) => {
 router.post('/movements/to-omie/:movementId', async (req, res) => {
   try {
     const { movementId } = req.params;
-    const movement = await Movement.findById(movementId).populate('product');
+    const tenantId = req.user.tenantId;
+    
+    if (!tenantId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Tenant ID not found in user'
+      });
+    }
+    
+    // Buscar movimento filtrando por tenant
+    const movement = await Movement.findOne({ 
+      _id: movementId,
+      tenantId 
+    }).populate('product');
     
     if (!movement) {
       return res.status(404).json({
@@ -123,7 +136,7 @@ router.post('/movements/to-omie/:movementId', async (req, res) => {
       });
     }
 
-    const result = await sendMovementToOmie(movement);
+    const result = await sendMovementToOmie(movement, req.user._id);
     res.json({
       success: true,
       data: result,
@@ -140,7 +153,7 @@ router.post('/movements/to-omie/:movementId', async (req, res) => {
 // Location sync routes
 router.post('/locations/from-omie', async (req, res) => {
   try {
-    const count = await syncLocationsFromOmie();
+    const count = await syncLocationsFromOmie(req.user._id);
     res.json({
       success: true,
       syncedCount: count,
@@ -158,7 +171,7 @@ router.post('/locations/from-omie', async (req, res) => {
 router.post('/orders', async (req, res) => {
   try {
     const { syncOrders } = await import('../services/omieOrderService.js');
-    const count = await syncOrders();
+    const count = await syncOrders(req.user._id);
     res.json({
       success: true,
       syncedCount: count,
@@ -175,7 +188,7 @@ router.post('/orders', async (req, res) => {
 // Product sync routes
 router.post('/products/from-omie', async (req, res) => {
   try {
-    const count = await syncProducts();
+    const count = await syncProducts(req.user._id);
     res.json({
       success: true,
       syncedCount: count,
@@ -192,6 +205,7 @@ router.post('/products/from-omie', async (req, res) => {
 // Full sync route
 router.post('/full', async (req, res) => {
   try {
+    const userId = req.user._id;
     const results = {
       products: { syncedCount: 0, errors: [] },
       locations: { syncedCount: 0, errors: [] },
@@ -201,21 +215,21 @@ router.post('/full', async (req, res) => {
 
     // Sync products
     try {
-      results.products.syncedCount = await syncProducts();
+      results.products.syncedCount = await syncProducts(userId);
     } catch (error) {
       results.products.errors.push(error.message);
     }
 
     // Sync locations
     try {
-      results.locations.syncedCount = await syncLocationsFromOmie();
+      results.locations.syncedCount = await syncLocationsFromOmie(userId);
     } catch (error) {
       results.locations.errors.push(error.message);
     }
 
     // Sync stock
     try {
-      const stockResult = await syncAllStockFromOmie();
+      const stockResult = await syncAllStockFromOmie(userId);
       results.stock.syncedCount = stockResult.syncedCount;
       results.stock.errors = stockResult.errors;
     } catch (error) {
@@ -228,7 +242,8 @@ router.post('/full', async (req, res) => {
       const startDate = new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000);
       const movementResult = await syncMovementsFromOmie(
         startDate.toISOString().split('T')[0],
-        endDate.toISOString().split('T')[0]
+        endDate.toISOString().split('T')[0],
+        userId
       );
       results.movements.syncedCount = movementResult.syncedCount;
       results.movements.errors = movementResult.errors;
@@ -256,16 +271,29 @@ router.post('/full', async (req, res) => {
   }
 });
 
-// Status route
+// Status route - filtrado por tenant
 router.get('/status', async (req, res) => {
   try {
-    const stockCount = await Stock.countDocuments();
-    const movementCount = await Movement.countDocuments();
-    const syncedMovements = await Movement.countDocuments({ omieId: { $exists: true, $ne: null } });
+    const tenantId = req.user.tenantId;
+    
+    if (!tenantId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Tenant ID not found in user'
+      });
+    }
+    
+    const stockCount = await Stock.countDocuments({ tenantId });
+    const movementCount = await Movement.countDocuments({ tenantId });
+    const syncedMovements = await Movement.countDocuments({ 
+      tenantId,
+      omieId: { $exists: true, $ne: null } 
+    });
 
     res.json({
       success: true,
       status: {
+        tenantId,
         stockRecords: stockCount,
         movementRecords: movementCount,
         syncedMovements,

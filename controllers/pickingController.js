@@ -7,7 +7,19 @@ import Order from '../models/Order.js';
 export async function createPicking(req, res) {
   try {
     const { orderId } = req.params;
-    const picking = await generatePicking(orderId);
+    const tenantId = req.user.tenantId;
+    
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID not found in user' });
+    }
+    
+    // Verificar se o pedido pertence ao tenant
+    const order = await Order.findOne({ _id: orderId, tenantId });
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found for this tenant' });
+    }
+    
+    const picking = await generatePicking(orderId, tenantId);
     res.json(picking);
   } catch (err) {
     res.status(400).json({ error: err.message });

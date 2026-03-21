@@ -2,15 +2,27 @@
 import Stock from '../models/Stock.js';
 import Product from '../models/Product.js';
 import Location from '../models/Location.js';
+import User from '../models/User.js';
 import { callOmie } from './omieClient.js';
 import logger from '../utils/syncLogger.js';
 
-export async function sendStockToOmie() {
-  logger.info('Starting stock sync to Omie');
+export async function sendStockToOmie(userId) {
+  if (!userId) {
+    throw new Error('User ID is required to send stock to Omie');
+  }
   
-  // Buscar produtos com estoque local
+  // Buscar tenantId do usuário
+  const user = await User.findById(userId).select('tenantId');
+  if (!user || !user.tenantId) {
+    throw new Error('User not found or tenantId not configured');
+  }
+  const tenantId = user.tenantId;
+  
+  logger.info('Starting stock sync to Omie', { userId, tenantId });
+  
+  // Buscar produtos com estoque local filtrando por tenant
   const stockAggregates = await Stock.aggregate([
-    { $match: { quantity: { $gt: 0 }, qualityStatus: 'GOOD' } },
+    { $match: { tenantId, quantity: { $gt: 0 }, qualityStatus: 'GOOD' } },
     { 
       $group: {
         _id: '$sku',
@@ -24,10 +36,10 @@ export async function sendStockToOmie() {
 
   for (const stock of stockAggregates) {
     try {
-      // Buscar produto para obter omieId
-      const product = await Product.findOne({ codigo: stock._id });
+      // Buscar produto para obter omieId filtrando por tenant
+      const product = await Product.findOne({ tenantId, codigo: stock._id });
       if (!product || !product.omieId) {
-        logger.warn(`Product ${stock._id} has no Omie ID, skipping`);
+        logger.warn(`Product ${stock._id} has no Omie ID or not found for tenant ${tenantId}, skipping`);
         continue;
       }
 
@@ -37,23 +49,28 @@ export async function sendStockToOmie() {
         {
           codigo_produto: product.omieId,
           quantidade: stock.totalQuantity,
-        }
+        },
+        userId
       );
       
       successCount++;
       logger.logStockSync(product, 'sent_to_omie', stock.totalQuantity);
     } catch (error) {
       errorCount++;
-      logger.error(`Failed to sync stock for ${stock._id}`, { error: error.message });
+      logger.error(`Failed to sync stock for ${stock._id}`, { error: error.message, tenantId });
     }
   }
 
-  logger.info('Stock sync to Omie completed', { successCount, errorCount });
+  logger.info('Stock sync to Omie completed', { successCount, errorCount, tenantId });
   return successCount;
 }
 
-export async function getStockFromOmie(productOmieId) {
-  logger.debug(`Fetching stock from Omie for product ${productOmieId}`);
+export async function getStockFromOmie(productOmieId, userId) {
+  if (!userId) {
+    throw new Error('User ID is required to fetch stock from Omie');
+  }
+  
+  logger.debug(`Fetching stock from Omie for product ${productOmieId}`, { userId });
   
   try {
     // Primeiro tenta buscar pelo ID do produto
@@ -64,7 +81,8 @@ export async function getStockFromOmie(productOmieId) {
         id_prod: parseInt(productOmieId),
         codigo_local_estoque: 0, // Todos os locais
         data: new Date().toLocaleDateString('pt-BR')
-      }
+      },
+      userId
     );
 
     logger.logApiCall('PosicaoEstoque', 'estoque/consulta/', { productOmieId }, result);
@@ -83,7 +101,8 @@ export async function getStockFromOmie(productOmieId) {
           dDataPosicao: new Date().toLocaleDateString('pt-BR'),
           cExibeTodos: "N",
           codigo_local_estoque: 0
-        }
+        },
+        userId
       );
       
       // Filtrar pelo produto específico
@@ -107,27 +126,44 @@ export async function getStockFromOmie(productOmieId) {
   }
 }
 
-export async function syncAllStockFromOmie() {
-  logger.info('Starting full stock sync from Omie');
+export async function syncAllStockFromOmie(userId) {
+  if (!userId) {
+    throw new Error('User ID is required to sync stock from Omie');
+  }
+  
+  // Buscar tenantId do usuário
+  const user = await User.findById(userId).select('tenantId');
+  if (!user || !user.tenantId) {
+    throw new Error('User not found or tenantId not configured');
+  }
+  const tenantId = user.tenantId;
+  
+  logger.info('Starting full stock sync from Omie', { userId, tenantId });
   
   // Importar produtos para garantir que temos os dados mais recentes
   const { syncProducts } = await import('./omieProductService.js');
   
   logger.info('Syncing products first to get latest data...');
-  await syncProducts();
+  await syncProducts(userId);
   
-  const products = await Product.find({ omieId: { $exists: true, $ne: null }, isActive: true });
+  // Buscar produtos apenas do tenant atual
+  const products = await Product.find({ 
+    tenantId,
+    omieId: { $exists: true, $ne: null }, 
+    isActive: true 
+  });
   
-  // Criar localização RECEBIMENTO se não existir
-  let receivingLocation = await Location.findOne({ code: 'RECEBIMENTO' });
+  // Criar localização RECEBIMENTO se não existir (com tenantId)
+  let receivingLocation = await Location.findOne({ tenantId, code: 'RECEBIMENTO' });
   if (!receivingLocation) {
     receivingLocation = await Location.create({
+      tenantId,
       code: 'RECEBIMENTO',
       description: 'Área de Recebimento',
       type: 'receiving',
       zone: 'Recebimento'
     });
-    logger.info('Created RECEBIMENTO location');
+    logger.info('Created RECEBIMENTO location', { tenantId });
   }
 
   let syncedCount = 0;
@@ -139,7 +175,7 @@ export async function syncAllStockFromOmie() {
       let stockQuantity = null;
       
       try {
-        const omieStock = await getStockFromOmie(product.omieId);
+        const omieStock = await getStockFromOmie(product.omieId, userId);
         
         // Extrair quantidade do campo correto 'saldo'
         if (omieStock && omieStock.saldo !== undefined) {
@@ -158,8 +194,8 @@ export async function syncAllStockFromOmie() {
       }
       
       if (stockQuantity !== null && stockQuantity > 0) {
-        // Verificar estoque local atual
-        const currentStock = await Stock.find({ sku: product.codigo });
+        // Verificar estoque local atual filtrando por tenant
+        const currentStock = await Stock.find({ tenantId, sku: product.codigo });
         const localTotal = currentStock.reduce((sum, s) => sum + s.quantity, 0);
         
         // Se houver diferença, atualizar para bater com Omie
@@ -181,10 +217,13 @@ export async function syncAllStockFromOmie() {
               logger.info(`Updated stock record for ${product.codigo} by ${difference > 0 ? '+' : ''}${difference}`);
             }
           } else {
-            // Criar/atualizar estoque em RECEBIMENTO
+            // Criar/atualizar estoque em RECEBIMENTO com tenantId
             await Stock.findOneAndUpdate(
-              { sku: product.codigo, locationCode: 'RECEBIMENTO' },
+              { tenantId, sku: product.codigo, locationCode: 'RECEBIMENTO' },
               { 
+                tenantId,
+                sku: product.codigo,
+                locationCode: 'RECEBIMENTO',
                 quantity: stockQuantity,
                 lastUpdated: new Date(),
                 omieSyncedAt: new Date()
@@ -218,12 +257,16 @@ export async function syncAllStockFromOmie() {
     }
   }
 
-  logger.logSyncResult('stock_from_omie', { syncedCount, errors });
+  logger.logSyncResult('stock_from_omie', { syncedCount, errors, tenantId });
   return { syncedCount, errors };
 }
 
-export async function getStockMovementsFromOmie(productOmieId, startDate, endDate) {
-  logger.debug(`Fetching stock movements from Omie for product ${productOmieId}`);
+export async function getStockMovementsFromOmie(productOmieId, startDate, endDate, userId) {
+  if (!userId) {
+    throw new Error('User ID is required to fetch stock movements from Omie');
+  }
+  
+  logger.debug(`Fetching stock movements from Omie for product ${productOmieId}`, { userId });
   
   try {
     // Usar o método correto para listar movimentos
@@ -238,7 +281,8 @@ export async function getStockMovementsFromOmie(productOmieId, startDate, endDat
         dDtInicial: startDate,
         dDtFinal: endDate,
         lista_local_estoque: ""
-      }
+      },
+      userId
     );
 
     logger.logApiCall('ListarMovimentoEstoque', 'estoque/consulta/', { productOmieId, startDate, endDate }, result);
@@ -249,8 +293,12 @@ export async function getStockMovementsFromOmie(productOmieId, startDate, endDat
   }
 }
 
-export async function adjustStockInOmie(productOmieId, quantity, reason = 'Ajuste WMS') {
-  logger.info(`Adjusting stock in Omie for product ${productOmieId}`, { quantity, reason });
+export async function adjustStockInOmie(productOmieId, quantity, reason, userId) {
+  if (!userId) {
+    throw new Error('User ID is required to adjust stock in Omie');
+  }
+  
+  logger.info(`Adjusting stock in Omie for product ${productOmieId}`, { quantity, reason, userId });
   
   try {
     const result = await callOmie(
@@ -260,7 +308,8 @@ export async function adjustStockInOmie(productOmieId, quantity, reason = 'Ajust
         codigo_produto: productOmieId,
         quantidade: quantity,
         motivo: reason,
-      }
+      },
+      userId
     );
 
     logger.logApiCall('AjustarEstoque', 'estoque/ajuste/', { productOmieId, quantity, reason }, result);
