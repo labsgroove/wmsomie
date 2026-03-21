@@ -11,9 +11,9 @@ const mpConfig = new MercadoPagoConfig({
 const paymentClient = new MPPayment(mpConfig);
 
 const CREDIT_PACKAGES = [
-  { id: 'starter', credits: 100, price: 29.90, name: 'Pacote Inicial' },
-  { id: 'pro', credits: 500, price: 99.90, name: 'Pacote Profissional' },
-  { id: 'enterprise', credits: 2000, price: 299.90, name: 'Pacote Empresarial' }
+  { id: 'starter', credits: 1000, price: 29.90, name: 'Pacote Inicial' },
+  { id: 'pro', credits: 5000, price: 99.90, name: 'Pacote Profissional' },
+  { id: 'enterprise', credits: 20000, price: 299.90, name: 'Pacote Empresarial' }
 ];
 
 class PaymentService {

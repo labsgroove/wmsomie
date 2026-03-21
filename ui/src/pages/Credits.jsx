@@ -4,9 +4,9 @@ import { paymentService } from '../services/paymentService';
 import api from '../services/api';
 
 const PACKAGES = [
-  { id: 'starter', credits: 100, price: 29.90, name: 'Pacote Inicial', icon: Package, color: 'bg-blue-500' },
-  { id: 'pro', credits: 500, price: 99.90, name: 'Pacote Profissional', icon: Zap, color: 'bg-purple-500' },
-  { id: 'enterprise', credits: 2000, price: 299.90, name: 'Pacote Empresarial', icon: Crown, color: 'bg-amber-500' }
+  { id: 'starter', credits: 1000, price: 29.90, name: 'Pacote Inicial', icon: Package, color: 'bg-blue-500' },
+  { id: 'pro', credits: 5000, price: 99.90, name: 'Pacote Profissional', icon: Zap, color: 'bg-purple-500' },
+  { id: 'enterprise', credits: 20000, price: 299.90, name: 'Pacote Empresarial', icon: Crown, color: 'bg-amber-500' }
 ];
 
 export default function Credits() {
@@ -96,8 +96,8 @@ export default function Credits() {
             <AlertCircle className="w-5 h-5 text-blue-500 mt-0.5" />
             <div>
               <p className="text-sm text-gray-600">
-                <strong>Como funciona:</strong> Cada lista de picking gerada consome <strong>1 crédito</strong>. 
-                Quando seus créditos acabarem, você precisa comprar mais para continuar gerando listas de separação.
+                <strong>Como funciona:</strong> Cada sincronização ou lista de picking gerada consome <strong>1 crédito</strong>. 
+                Quando seus créditos acabarem, você precisa comprar mais para continuar gerando listas de separação e atualizando seu estoque.
               </p>
             </div>
           </div>
@@ -230,9 +230,9 @@ export default function Credits() {
         <div className="mt-8 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Como usar seus créditos</h3>
           <div className="text-gray-600 space-y-2 text-sm">
-            <p>1. Acesse a página <strong>Separação</strong> no menu</p>
+            <p>1. Um credito será consumido para cada sincronização de pedidos</p>
             <p>2. Selecione um pedido para gerar a lista de picking</p>
-            <p>3. Clique em <strong>Gerar Picking</strong> - 1 crédito será consumido</p>
+            <p>3. Clique em <strong>Abrir</strong> - Sua lista de separação será gerada e 1 crédito será consumido</p>
             <p>4. Imprima ou visualize a lista de separação</p>
           </div>
         </div>
