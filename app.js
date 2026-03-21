@@ -13,13 +13,30 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// Habilitar CORS
-const allowedOrigins = process.env.ALLOWED_ORIGINS 
-  ? process.env.ALLOWED_ORIGINS.split(',')
-  : ['http://localhost:5173', 'http://localhost:5174', 'http://127.0.0.1:5173', 'http://127.0.0.1:5174'];
+// CORS com fallback seguro para dev e compatibilidade com domínio do Render.
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean)
+  : [];
 
 app.use(cors({
-  origin: allowedOrigins,
+  origin: (origin, callback) => {
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+
+    if (allowedOrigins.length === 0) {
+      callback(null, true);
+      return;
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error('Origin not allowed by CORS'));
+  },
   credentials: true
 }));
 
@@ -37,7 +54,7 @@ app.use((req, res, next) => {
   next();
 });
 
-mongoose.connect(process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/wmsomie')
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/wmsomie')
   .then(() => console.log('MongoDB connected successfully'))
   .catch((error) => {
     console.error('MongoDB connection error:', error);

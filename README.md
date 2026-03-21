@@ -50,25 +50,14 @@ cd wmsomie
 npm install
 ```
 
-3. Configure as variáveis de ambiente:
+3. Configure o `.env`:
 ```bash
 cp .env.example .env
 ```
 
-Edite o arquivo `.env` com suas credenciais:
+Edite o arquivo `.env` com as credenciais do banco:
 ```env
-# MongoDB
 MONGODB_URI=mongodb://localhost:27017/wmsomie
-
-# Omie API
-OMIE_APP_ID=seu_app_id
-OMIE_APP_SECRET=seu_app_secret
-
-# Webhook
-OMIE_WEBHOOK_SECRET=sua_webhook_secret
-
-# Porta do servidor
-PORT=3000
 ```
 
 ### Execução
@@ -83,6 +72,24 @@ npm start
 ```
 
 A aplicação estará disponível em `http://localhost:3000`
+
+## Deploy no Render
+
+### Web Service
+- **Runtime**: Node
+- **Build Command**: `npm install`
+- **Start Command**: `npm start`
+- **Root Directory**: repositório raiz
+
+### Variáveis de ambiente no Render
+- `MONGODB_URI` (obrigatória)
+- `ALLOWED_ORIGINS` (opcional, lista separada por vírgula para restringir CORS)
+- `NODE_ENV=production` (recomendado)
+
+### Domínio e porta
+- O backend já usa `process.env.PORT` automaticamente (compatível com Render).
+- O frontend usa `/api` como base por padrão, então funciona no mesmo domínio do serviço sem hardcode.
+- Configure o webhook da Omie para: `https://<seu-servico>.onrender.com/api/webhook/omie`.
 
 ## 📡 Configuração do Webhook Omie
 
