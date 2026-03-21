@@ -10,26 +10,31 @@ import Product from '../models/Product.js';
 import Location from '../models/Location.js';
 import syncRoutes from './sync.js';
 import webhookRoutes from './webhook.js';
+import authRoutes from './auth.js';
+import { protect } from '../middleware/auth.js';
 
 const router = Router();
 
-// Sync routes
-router.use('/sync', syncRoutes);
+// Auth routes (públicas)
+router.use('/auth', authRoutes);
 
-// Webhook routes
+// Sync routes (protegidas)
+router.use('/sync', protect, syncRoutes);
+
+// Webhook routes (públicas - webhooks externas precisam acessar)
 router.use('/webhook', webhookRoutes);
 
-// Endpoints de localização
-router.post('/locations', locationController.createLocationController);
-router.get('/locations', locationController.getLocations);
-router.get('/locations/by-zone/:zone', locationController.getLocations);
-router.get('/locations/code/:code', locationController.getLocationByCode);
-router.get('/locations/check/:code', locationController.checkLocationAvailability);
-router.get('/locations/nearby/:code', locationController.getLocationsNearby);
-router.patch('/locations/:id/status', locationController.updateLocationStatus);
+// Endpoints de localização (protegidos)
+router.post('/locations', protect, locationController.createLocationController);
+router.get('/locations', protect, locationController.getLocations);
+router.get('/locations/by-zone/:zone', protect, locationController.getLocations);
+router.get('/locations/code/:code', protect, locationController.getLocationByCode);
+router.get('/locations/check/:code', protect, locationController.checkLocationAvailability);
+router.get('/locations/nearby/:code', protect, locationController.getLocationsNearby);
+router.patch('/locations/:id/status', protect, locationController.updateLocationStatus);
 
-// Novos endpoints para a UI
-router.get('/movements', async (req, res) => {
+// Movimentos (protegidos)
+router.get('/movements', protect, async (req, res) => {
   try {
     const movements = await Movement.find()
       .populate('product')
@@ -42,7 +47,7 @@ router.get('/movements', async (req, res) => {
   }
 });
 
-router.get('/movements/:type', async (req, res) => {
+router.get('/movements/:type', protect, async (req, res) => {
   try {
     const { type } = req.params;
     const movements = await Movement.find({ type })
@@ -56,7 +61,8 @@ router.get('/movements/:type', async (req, res) => {
   }
 });
 
-router.get('/orders', async (req, res) => {
+// Orders (protegidos)
+router.get('/orders', protect, async (req, res) => {
   try {
     const orders = await Order.find()
       .populate('items.product')
@@ -67,7 +73,7 @@ router.get('/orders', async (req, res) => {
   }
 });
 
-router.get('/orders/:id', async (req, res) => {
+router.get('/orders/:id', protect, async (req, res) => {
   try {
     const order = await Order.findById(req.params.id)
       .populate('items.product');
@@ -80,7 +86,7 @@ router.get('/orders/:id', async (req, res) => {
   }
 });
 
-router.delete('/orders/:id', async (req, res) => {
+router.delete('/orders/:id', protect, async (req, res) => {
   try {
     const result = await Order.findByIdAndDelete(req.params.id);
     if (!result) {
@@ -92,7 +98,7 @@ router.delete('/orders/:id', async (req, res) => {
   }
 });
 
-router.patch('/orders/:id', async (req, res) => {
+router.patch('/orders/:id', protect, async (req, res) => {
   try {
     const { status } = req.body;
     const order = await Order.findByIdAndUpdate(
@@ -106,8 +112,8 @@ router.patch('/orders/:id', async (req, res) => {
   }
 });
 
-// Picking routes
-router.get('/picking', async (req, res) => {
+// Picking routes (protegidos)
+router.get('/picking', protect, async (req, res) => {
   try {
     const Picking = await import('../models/Picking.js');
     const pickingList = await Picking.default.find()
@@ -121,20 +127,20 @@ router.get('/picking', async (req, res) => {
   }
 });
 
-router.post('/picking/:orderId', pickingController.createPicking);
+router.post('/picking/:orderId', protect, pickingController.createPicking);
 
-// Rotas de gerenciamento de estoque no picking
-router.get('/picking/:pickingId/allocations', pickingController.getPickingWithAllocations);
-router.post('/picking/:pickingId/reserve', pickingController.reserveStock);
-router.post('/picking/:pickingId/confirm', pickingController.confirmPicking);
-router.post('/picking/:pickingId/cancel', pickingController.cancelPicking);
+// Rotas de gerenciamento de estoque no picking (protegidas)
+router.get('/picking/:pickingId/allocations', protect, pickingController.getPickingWithAllocations);
+router.post('/picking/:pickingId/reserve', protect, pickingController.reserveStock);
+router.post('/picking/:pickingId/confirm', protect, pickingController.confirmPicking);
+router.post('/picking/:pickingId/cancel', protect, pickingController.cancelPicking);
 
-// Rotas de consulta de estoque e alocações
-router.get('/stock/allocation/:productSku', pickingController.getStockAllocation);
-router.get('/stock/available/:productSku', pickingController.getAvailableStock);
-router.get('/stock/reservation/:productSku', pickingController.getReservationStatus);
+// Rotas de consulta de estoque e alocações (protegidas)
+router.get('/stock/allocation/:productSku', protect, pickingController.getStockAllocation);
+router.get('/stock/available/:productSku', protect, pickingController.getAvailableStock);
+router.get('/stock/reservation/:productSku', protect, pickingController.getReservationStatus);
 
-router.patch('/picking/:id/status', async (req, res) => {
+router.patch('/picking/:id/status', protect, async (req, res) => {
   try {
     const { status } = req.body;
     const Picking = await import('../models/Picking.js');
@@ -154,8 +160,8 @@ router.patch('/picking/:id/status', async (req, res) => {
   }
 });
 
-// Endpoint para estoque em recebimento
-router.get('/stock/receiving', async (req, res) => {
+// Endpoint para estoque em recebimento (protegido)
+router.get('/stock/receiving', protect, async (req, res) => {
   try {
     const { getReceivingStock } = await import('../services/stockService.js');
     const receivingStock = await getReceivingStock();
@@ -165,8 +171,8 @@ router.get('/stock/receiving', async (req, res) => {
   }
 });
 
-// Endpoint para adicionar estoque em recebimento
-router.post('/stock/receiving', async (req, res) => {
+// Endpoint para adicionar estoque em recebimento (protegido)
+router.post('/stock/receiving', protect, async (req, res) => {
   try {
     const { addStockToReceiving } = await import('../services/stockService.js');
     const { sku, quantity, options } = req.body;
@@ -177,7 +183,8 @@ router.post('/stock/receiving', async (req, res) => {
   }
 });
 
-router.get('/stock', async (req, res) => {
+// Stock (protegido)
+router.get('/stock', protect, async (req, res) => {
   try {
     // Buscar estoque com o novo modelo
     const stockRecords = await Stock.find()
@@ -221,7 +228,7 @@ router.get('/stock', async (req, res) => {
   }
 });
 
-router.patch('/stock/:productId/location', async (req, res) => {
+router.patch('/stock/:productId/location', protect, async (req, res) => {
   try {
     const { locationId } = req.body;
     
@@ -284,7 +291,7 @@ router.patch('/stock/:productId/location', async (req, res) => {
 });
 
 // Rota de transferência para a UI (aceita productId)
-router.post('/stock/transfer', async (req, res) => {
+router.post('/stock/transfer', protect, async (req, res) => {
   console.log('=== TRANSFER REQUEST RECEIVED ===');
   console.log('Request body:', req.body);
   
@@ -342,7 +349,7 @@ router.post('/stock/transfer', async (req, res) => {
   }
 });
 
-router.post('/stock/sync-with-omie', async (req, res) => {
+router.post('/stock/sync-with-omie', protect, async (req, res) => {
   try {
     // Importar o serviço de sincronização
     const { syncAllStockFromOmie } = await import('../services/omieStockService.js');
