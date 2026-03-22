@@ -8,7 +8,7 @@ dotenv.config();
 async function cleanupNullProducts() {
   try {
     console.log('Connecting to MongoDB...');
-    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/wmsomie');
+    await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/wmsomie');
     
     console.log('Finding products with null/empty codigo...');
     
