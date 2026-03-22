@@ -1,7 +1,7 @@
 // src/routes/sync.js
 import express from 'express';
-import { consumeCredit } from '../middleware/credits.js';
 import User from '../models/User.js';
+import syncLogger from '../utils/syncLogger.js';
 import { 
   syncAllStockFromOmie, 
   sendStockToOmie, 
@@ -31,7 +31,23 @@ async function checkAndConsumeCredits(userId, action) {
     throw error;
   }
   
-  return await consumeCredit(userId, action);
+  // Decrementar créditos diretamente
+  const updatedUser = await User.findByIdAndUpdate(
+    userId,
+    { $inc: { 'subscription.credits': -1 } },
+    { new: true }
+  );
+
+  const newCredits = updatedUser?.subscription?.credits || 0;
+
+  syncLogger.info('Crédito consumido', {
+    userId,
+    previousCredits: credits,
+    newCredits,
+    operation: action
+  });
+
+  return newCredits;
 }
 
 // Stock sync routes
